@@ -1,0 +1,29 @@
+# ESP-IDF build output and local configuration
+firmware/**/build/
+firmware/**/build_*/
+firmware/**/sdkconfig
+firmware/**/sdkconfig.*
+firmware/**/sdkconfig.old
+firmware/**/managed_components/
+.idf-build-env/
+.font-tools/
+
+# Keep the reviewed, reproducible board configurations in version control.
+!firmware/**/sdkconfig.defaults
+!firmware/p4_main/sdkconfig.display
+!firmware/p4_main/sdkconfig.sign
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+Desktop.ini
+__pycache__/
+*.py[cod]
+*.log
+logs/
+
+# Local secrets and device-specific overrides
+*.local
+secrets/

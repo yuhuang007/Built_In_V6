@@ -1,0 +1,26 @@
+menu "Built_In_V6 cloud voice configuration"
+
+config VOLC_RTC_MODE
+    bool "Enable Volcano Engine high-quality RTC transport"
+    default y
+    help
+        Build the P4-specific VolcEngine RTC client contained in the locally
+        downloaded ConversationalAI Embedded Kit. Credentials are intentionally
+        not Kconfig values; they are read only from the Git-ignored secrets
+        header.
+
+endmenu
+
+config P4_SIGN_LANGUAGE_MODE
+    bool "Enable demand-driven sign-language camera preview"
+    default n
+    help
+        Adds a camera entry to the voice home screen. Only the separate sign
+        build profile enables this; the stable display profile stays voice-only.
+
+config P4_ASR_MODE
+    bool "Enable standalone push-to-talk Doubao ASR"
+    default n
+    help
+        Separate 16 kHz transcription, with no LLM/TTS. Credentials live only
+        in the Git-ignored secrets/doubao_asr.h, not in Kconfig or logs.

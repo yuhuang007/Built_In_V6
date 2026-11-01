@@ -1,0 +1,13 @@
+{
+  "upstream": "pkg-ime/libgooglepinyin",
+  "commit": "4a5016ac35ca5f1db4b56eadcf04ee47f00200f0",
+  "abi": "32-bit-little-endian",
+  "personal_learning": false,
+  "files": [
+    {
+      "name": "P4PYV1.DAT",
+      "bytes": 1068442,
+      "sha256": "5722707837c94a773b7a833075e46be1f746fadccd262bdf156d3e4d4827e02d"
+    }
+  ]
+}

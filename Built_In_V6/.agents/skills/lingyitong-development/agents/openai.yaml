@@ -1,0 +1,6 @@
+interface:
+  display_name: "灵译通项目开发与交付"
+  short_description: "灵译通固件开发、手语模型实验、训练电脑交接及分层验收工作流"
+  default_prompt: "使用 $lingyitong-development 处理本次灵译通项目任务，先列任务与验证方式，再按授权范围实施并报告真实验证结果。"
+policy:
+  allow_implicit_invocation: true
