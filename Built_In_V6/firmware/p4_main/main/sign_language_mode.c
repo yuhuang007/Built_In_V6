@@ -8,6 +8,7 @@
 #include "bsp/esp-bsp.h"
 #include "sign_language_mode.h"
 #include "portrait_display.h"
+#include "qinghe_ui.h"
 #include "driver/i2c_master.h"
 #include "driver/isp.h"
 #include "driver/isp_awb.h"
@@ -285,6 +286,28 @@ fail:
     return ret;
 }
 
+static esp_err_t apply_white_balance_metadata(white_balance_context_t *white_balance,
+                                              const esp_ipa_metadata_t *metadata)
+{
+    const bool red = (metadata->flags & IPA_METADATA_FLAGS_RG) != 0;
+    const bool blue = (metadata->flags & IPA_METADATA_FLAGS_BG) != 0;
+    if (!red && !blue) return ESP_OK;
+    /* IPA flags are independent. Preserve the last applied value of a channel
+     * that has no update; its metadata field is not valid in this result. */
+    const float red_gain = red ? metadata->red_gain : white_balance->red_gain;
+    const float blue_gain = blue ? metadata->blue_gain : white_balance->blue_gain;
+    const isp_wbg_gain_t gain = {
+        .gain_r = (uint32_t)(red_gain * PROBE_WBG_UNITY_GAIN + 0.5f),
+        .gain_g = PROBE_WBG_UNITY_GAIN,
+        .gain_b = (uint32_t)(blue_gain * PROBE_WBG_UNITY_GAIN + 0.5f),
+    };
+    ESP_RETURN_ON_ERROR(esp_isp_wbg_set_wb_gain(white_balance->isp, gain), TAG,
+                        "applying AWB gain failed");
+    white_balance->red_gain = red_gain;
+    white_balance->blue_gain = blue_gain;
+    return ESP_OK;
+}
+
 static esp_err_t update_white_balance(white_balance_context_t *white_balance)
 {
     esp_isp_awb_evt_data_t event;
@@ -308,18 +331,8 @@ static esp_err_t update_white_balance(white_balance_context_t *white_balance)
                                                  &white_balance->sensor_info, &metadata),
                         TAG, "processing AWB statistics failed");
 
-    if ((metadata.flags & (IPA_METADATA_FLAGS_RG | IPA_METADATA_FLAGS_BG)) ==
-        (IPA_METADATA_FLAGS_RG | IPA_METADATA_FLAGS_BG)) {
-        const isp_wbg_gain_t gain = {
-            .gain_r = (uint32_t)(metadata.red_gain * PROBE_WBG_UNITY_GAIN + 0.5f),
-            .gain_g = PROBE_WBG_UNITY_GAIN,
-            .gain_b = (uint32_t)(metadata.blue_gain * PROBE_WBG_UNITY_GAIN + 0.5f),
-        };
-        ESP_RETURN_ON_ERROR(esp_isp_wbg_set_wb_gain(white_balance->isp, gain), TAG,
-                            "applying AWB gain failed");
-        white_balance->red_gain = metadata.red_gain;
-        white_balance->blue_gain = metadata.blue_gain;
-    }
+    ESP_RETURN_ON_ERROR(apply_white_balance_metadata(white_balance, &metadata), TAG,
+                        "applying AWB metadata failed");
 
     if (white_balance->stats_sequence == 1 || white_balance->stats_sequence % 30 == 0) {
         const float measured_red_gain = result->sum_r == 0 ? 0.0f :
@@ -328,10 +341,10 @@ static esp_err_t update_white_balance(white_balance_context_t *white_balance)
             (float)result->sum_g / result->sum_b;
         ESP_LOGI(TAG,
                  "AWB seq=%" PRIu64 " patches=%" PRIu32
-                 " measured_r=%.3f measured_b=%.3f applied_r=%.3f applied_b=%.3f",
+                 " measured_r=%.3f measured_b=%.3f applied_r=%.3f applied_b=%.3f flags=%" PRIu32,
                  white_balance->stats_sequence, result->white_patch_num,
                  measured_red_gain, measured_blue_gain,
-                 white_balance->red_gain, white_balance->blue_gain);
+                 white_balance->red_gain, white_balance->blue_gain, metadata.flags);
     }
     return ESP_OK;
 }
@@ -482,10 +495,12 @@ static void return_to_voice(lv_event_t *event)
     (void)event;
     if (!stop_requested) {
         stop_requested = true;
-        lv_label_set_text(preview_status, "正在返回语音...");
+        lv_label_set_text(preview_status, "正在返回首页...");
         ESP_LOGI(TAG, "return requested; stopping preview without reboot");
     }
 }
+
+void sign_language_mode_request_return(void) { return_to_voice(NULL); }
 
 static void preview_set_status(const char *text)
 {
@@ -499,29 +514,22 @@ static void create_preview_screen(void)
 {
     lv_obj_t *screen = lv_obj_create(NULL);
     preview_screen = screen;
-    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(screen, qh_color(QH_BG), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     preview_status = lv_label_create(screen);
     lv_obj_set_style_text_font(preview_status, preview_font, 0);
-    lv_obj_set_style_text_color(preview_status, lv_color_white(), 0);
+    lv_obj_set_style_text_color(preview_status, qh_color(QH_MUTED), 0);
     lv_label_set_text(preview_status, "正在启动摄像头...");
-    lv_obj_set_size(preview_status, 400, 48);
-    lv_label_set_long_mode(preview_status, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(preview_status, 290, 54);
+    lv_label_set_long_mode(preview_status, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(preview_status, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(preview_status, LV_ALIGN_TOP_RIGHT, -10, 8);
-    lv_obj_t *back = lv_button_create(screen);
-    lv_obj_set_size(back, 150, 48);
-    /* Theme shadows must not spill into the constantly refreshed preview. */
-    lv_obj_set_style_shadow_width(back, 0, LV_PART_MAIN | LV_STATE_ANY);
-    lv_obj_set_style_outline_width(back, 0, LV_PART_MAIN | LV_STATE_ANY);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 10, 8);
-    lv_obj_t *label = lv_label_create(back);
-    lv_obj_set_style_text_font(label, preview_font, 0);
-    lv_label_set_text(label, "返回语音");
-    lv_obj_center(label);
-    lv_obj_add_event_cb(back, return_to_voice, LV_EVENT_CLICKED, NULL);
-    lv_screen_load(screen);
+    lv_obj_set_pos(preview_status,88,5);
+    lv_obj_t *back=qh_back_button(screen,return_to_voice);
+    lv_obj_set_y(back,4);
+    lv_obj_t *settings=qh_settings_button(screen);lv_obj_set_y(settings,4);
+    lv_obj_t *theme=qh_theme_button(screen);lv_obj_set_y(theme,4);
+    qh_screen_load_camera(screen, false);
     /* Keep the voice screen alive: existing cloud callbacks own its labels. */
 }
 
@@ -632,7 +640,7 @@ static void preview_task(void *arg)
             stage_us = esp_timer_get_time();
             if (bsp_display_lock(0)) {
                 if (capture.displayed_frame_count == 0) {
-                    lv_label_set_text(preview_status, "手语预览（识别模型待接入）");
+                    lv_label_set_text(preview_status, "相机预览 · 识别未接入");
                 }
                 /* Finish header updates before composing a complete native
                  * camera frame. No LVGL image copy or second rotation. */
@@ -758,7 +766,7 @@ cleanup:
     ESP_GOTO_ON_FALSE(bsp_display_lock(0), ESP_ERR_TIMEOUT, cleanup_failed, TAG,
                       "voice screen restore lock failed");
     {
-        lv_screen_load(voice_screen);
+        qh_screen_load_camera(voice_screen, true);
         lv_obj_delete(preview_screen);
         preview_screen = preview_status = NULL;
         /* Keep touch callbacks out until the voice state has been restored. */
@@ -801,7 +809,7 @@ esp_err_t sign_language_mode_start(const lv_font_t *font,
     /* Called from LVGL: its recursive lock already protects screen creation. */
     create_preview_screen();
     if (xTaskCreate(preview_task, "sign_preview", 16384, NULL, 3, NULL) != pdPASS) {
-        lv_screen_load(voice_screen);
+        qh_screen_load_camera(voice_screen, true);
         lv_obj_delete(preview_screen);
         preview_screen = preview_status = NULL;
         mode_active = false;

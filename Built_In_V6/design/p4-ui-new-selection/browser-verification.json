@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-02",
+  "browser": "Tabbit",
+  "entry": "index.html",
+  "sixLocalImagesLoaded": true,
+  "fourSelectionLimitVerified": true,
+  "imageZoomAndCloseVerified": true,
+  "selectionResetToZero": true,
+  "viewportsWithoutHorizontalOverflow": [390, 900, 1440],
+  "clipboardWriteTested": false,
+  "visualReview": ["overview.png", "board-preview.png"],
+  "previewRenderer": "Edge headless, isolated temporary profile",
+  "firmwareChanged": false,
+  "thirdPartyApplicationInteractionsTested": false
+}

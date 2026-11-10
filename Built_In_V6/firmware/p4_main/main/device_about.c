@@ -1,5 +1,6 @@
 #include "device_about.h"
 #include "ui_layout.h"
+#include "qinghe_ui.h"
 #include "asr_display_font.h"
 #include "speech_to_text_mode.h"
 #include "esp_app_desc.h"
@@ -99,14 +100,14 @@ static void collect_info(void *argument)
 static void back_callback(lv_event_t *event)
 {
     (void)event;
-    if (previous_screen) lv_screen_load(previous_screen);
+    if (previous_screen) qh_screen_load(previous_screen, true);
 }
 static void refresh(lv_timer_t *timer)
 {
     (void)timer;
     if (lv_screen_active() == screen && atomic_load(&result_state) == 2) {
         for (unsigned i = 0; i < 4; ++i) lv_label_set_text(bodies[i], info[i]);
-        lv_label_set_text(notice, "进入页面时的信息快照，重新进入可刷新");
+        lv_label_set_text(notice, "信息快照 · 重新进入可刷新");
         atomic_store(&result_state, 0);
     }
 }
@@ -124,51 +125,40 @@ void device_about_show(lv_obj_t *return_screen, const lv_font_t *font,
     if (!screen) {
         screen = lv_obj_create(NULL);
         lv_obj_set_scrollable(screen, false);
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0x101E32), 0);
-        page_title = lv_label_create(screen);
-        lv_label_set_text(page_title, "关于设备");
-        lv_obj_align(page_title, LV_ALIGN_TOP_RIGHT, -28, 30);
-        lv_obj_set_style_text_color(screen, lv_color_white(), 0);
-        lv_obj_t *back = lv_button_create(screen);
-        lv_obj_set_size(back, 160, 52);
-        lv_obj_align(back, LV_ALIGN_TOP_LEFT, 32, 20);
-        lv_obj_set_style_bg_color(back, lv_color_hex(0x1D72D8), 0);
-        lv_obj_set_style_radius(back, 12, 0);
-        lv_obj_t *label = lv_label_create(back);
-        lv_label_set_text(label, "返回设置"); lv_obj_center(label);
-        lv_obj_add_event_cb(back, back_callback, LV_EVENT_CLICKED, NULL);
+        lv_obj_set_style_bg_color(screen, qh_color(QH_BG), 0);
+        qh_screen(screen);
+        page_title=qh_header(screen,"关于设备",font,back_callback,true);
         lv_obj_t *hero = lv_obj_create(screen);
         lv_obj_remove_style_all(hero);
-        lv_obj_set_size(hero, UI_CONTENT_WIDTH, 100);
-        lv_obj_align(hero, LV_ALIGN_TOP_MID, 0, 82);
-        lv_obj_set_style_bg_color(hero, lv_color_hex(0x203E60), 0);
+        lv_obj_set_size(hero, UI_CONTENT_WIDTH, 160);
+        lv_obj_align(hero, LV_ALIGN_TOP_MID, 0, 110);
+        lv_obj_set_style_bg_color(hero, qh_color(QH_SOFT), 0);
         lv_obj_set_style_bg_opa(hero, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(hero, 16, 0);
         lv_obj_set_scrollable(hero, false);
         lv_obj_t *badge = lv_obj_create(hero);
         lv_obj_remove_style_all(badge);
-        lv_obj_set_size(badge, 56, 56);
-        lv_obj_set_pos(badge, 16, 12);
-        lv_obj_set_style_bg_color(badge, lv_color_hex(0x1D72D8), 0);
+        lv_obj_set_size(badge, 72, 72);
+        lv_obj_set_pos(badge, 8, 4);
+        lv_obj_set_style_bg_color(badge, qh_color(QH_SOFT), 0);
         lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(badge, 14, 0);
         lv_obj_set_scrollable(badge, false);
-        lv_obj_t *mark = lv_label_create(badge);
-        lv_label_set_text(mark, "P4"); lv_obj_center(mark);
+        lv_obj_t *mark = qh_logo(badge); lv_obj_center(mark);
         hero_title = lv_label_create(hero);
-        lv_label_set_text(hero_title, "聋哑人智能翻译终端");
+        lv_label_set_text(hero_title, "灵译通");
         lv_obj_set_pos(hero_title, 92, 12);
         lv_obj_set_width(hero_title, UI_CONTENT_WIDTH - 110);
         lv_label_set_long_mode(hero_title, LV_LABEL_LONG_WRAP);
         lv_obj_t *caption = lv_label_create(hero);
         lv_label_set_text(caption, "ESP32-P4X");
-        lv_obj_set_style_text_color(caption, lv_color_hex(0xB5D7F2), 0);
-        lv_obj_set_pos(caption, 92, 60);
+        lv_obj_set_style_text_color(caption, qh_color(QH_MUTED), 0);
+        lv_obj_set_pos(caption, 92, 84);
         lv_obj_set_width(caption, UI_CONTENT_WIDTH - 110);
         list = lv_obj_create(screen);
         lv_obj_remove_style_all(list);
-        lv_obj_set_size(list, UI_CONTENT_WIDTH, 736);
-        lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 198);
+        lv_obj_set_size(list, UI_CONTENT_WIDTH, 590);
+        lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 290);
         lv_obj_set_scroll_dir(list, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
         lv_obj_set_style_pad_right(list, 10, 0);
@@ -177,15 +167,15 @@ void device_about_show(lv_obj_t *return_screen, const lv_font_t *font,
         lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
         lv_obj_set_style_pad_row(list, 16, 0);
         const char *titles[] = {"硬件与内存", "固件与功能", "存储与分区", "连接与当前设置"};
-        const uint32_t colors[] = {0x62BEFF, 0x76DEC0, 0xFFCE80, 0xC0B5FF};
+        const uint32_t colors[] = {QH_LINK, QH_LINK, QH_WARN, QH_LINK};
         for (unsigned i = 0; i < 4; ++i) {
             lv_obj_t *card = lv_obj_create(list);
             lv_obj_remove_style_all(card);
             lv_obj_set_size(card, LV_PCT(100), LV_SIZE_CONTENT);
-            lv_obj_set_style_bg_color(card, lv_color_hex(0x1A304B), 0);
+            lv_obj_set_style_bg_color(card, qh_color(QH_SURFACE), 0);
             lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
             lv_obj_set_style_radius(card, 16, 0);
-            lv_obj_set_style_border_color(card, lv_color_hex(0x2C4A6A), 0);
+            lv_obj_set_style_border_color(card, qh_color(QH_LINE), 0);
             lv_obj_set_style_border_width(card, 1, 0);
             lv_obj_set_style_pad_all(card, 18, 0);
             lv_obj_set_style_pad_row(card, 12, 0);
@@ -193,7 +183,7 @@ void device_about_show(lv_obj_t *return_screen, const lv_font_t *font,
             lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
             headings[i] = lv_label_create(card);
             lv_label_set_text(headings[i], titles[i]);
-            lv_obj_set_style_text_color(headings[i], lv_color_hex(colors[i]), 0);
+            lv_obj_set_style_text_color(headings[i], qh_color(colors[i]), 0);
             bodies[i] = lv_label_create(card);
             lv_obj_set_width(bodies[i], LV_PCT(100));
             lv_label_set_long_mode(bodies[i], LV_LABEL_LONG_WRAP);
@@ -202,7 +192,7 @@ void device_about_show(lv_obj_t *return_screen, const lv_font_t *font,
         notice = lv_label_create(screen);
         lv_obj_set_width(notice, UI_CONTENT_WIDTH);
         lv_label_set_long_mode(notice, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_color(notice, lv_color_hex(0x9FB5CE), 0);
+        lv_obj_set_style_text_color(notice, qh_color(QH_MUTED), 0);
         lv_obj_align(notice, LV_ALIGN_BOTTOM_MID, 0, -8);
         lv_timer_create(refresh, 150, NULL);
     }
@@ -216,7 +206,7 @@ void device_about_show(lv_obj_t *return_screen, const lv_font_t *font,
         for (unsigned i = 0; i < 4; ++i) lv_obj_set_style_text_font(headings[i], heading_font, 0);
     }
 #endif
-    lv_screen_load(screen);
+    qh_screen_load(screen, false);
     if (atomic_load(&result_state) == 1) return;
     wifi_up = wifi; cloud_up = cloud;
     brightness_value = brightness; volume_value = volume; font_value = font_size;

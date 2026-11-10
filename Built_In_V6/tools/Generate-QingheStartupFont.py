@@ -1,0 +1,5 @@
+from pathlib import Path
+import re,subprocess
+root=Path.cwd();s=(root/'firmware/p4_main/main/main.c').read_text(encoding='utf-8');a=s.index('static void startup_status_timer');b=s.index('void app_main(void)');chars=''.join(c for literal in re.findall(r'"([^"\n]+)"',s[a:b]) for c in literal if ord(c)>127)
+conv=root/'.font-tools/node_modules/lv_font_conv/lv_font_conv.js';font=root/'firmware/p4_main/managed_components/lvgl__lvgl/scripts/generators/built_in_font/SourceHanSansSC-Normal.otf'
+subprocess.run([r'E:\XUEXI\Node.js\node.exe',str(conv),'--no-compress','--no-prefilter','--no-kerning','--size','24','--bpp','4','--format','lvgl','--font',str(font),'-r','0x20-0x7e','--symbols',''.join(sorted(set(chars))),'--lv-include','lvgl.h','--lv-font-name','lv_font_startup_zh','-o',str(root/'firmware/p4_main/main/font_startup_zh.c')],check=True)

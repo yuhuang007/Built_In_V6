@@ -43,9 +43,11 @@ flash hardware or execute historical training prompts during handoff.
 ## Source Baseline
 
 - Branch: feature/voice-to-text
-- Git HEAD: 83d50a6
-- Last documented physical P4 flash: a10ff5e on COM20 (diagnostic build).
+- Git HEAD: f8a2bb5ec875fba5f975fcd2ba5999329af2589a
+- Last documented physical P4 flash: 5fe8fe6 on COM20 (latest recorded firmware; scrolling and camera color issues remain unresolved).
 - Original source working tree and its existing remote were left unchanged.
 
 This is an owner-authorized unredacted backup, not a sanitized source release.
 Its configuration and binaries can contain operational credentials.
+
+Snapshot refreshed 2026-11-10 (Asia/Shanghai). Includes current uncommitted MQDD and design files. Earlier release packages are superseded.

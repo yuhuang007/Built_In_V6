@@ -61,14 +61,17 @@ def main():
     startup_home = None
     preview_samples = []
     preview_stages = []
+    preview_awb = []
     panic_diagnostics = []
     editor_health = []
     asr_entries = []
     asr_failures = []
+    asr_font_results = []
     network_health = []
     wifi_worker_health = []
     wifi_disconnect_reasons = []
     tls_errors = []
+    ui_perf = []
     display_health = []
     display_power_events = []
     counts["error_lines"] = 0
@@ -89,10 +92,29 @@ def main():
             while b"\n" in pending:
                 raw, pending = pending.split(b"\n", 1)
                 line = raw.decode("utf-8", errors="replace")
+                awb = re.search(r"sign_preview: AWB seq=(\d+) patches=(\d+) measured_r=(\d+\.\d+) measured_b=(\d+\.\d+) applied_r=(\d+\.\d+) applied_b=(\d+\.\d+)", line)
+                if awb:
+                    sequence, patches, measured_r, measured_b, applied_r, applied_b = awb.groups()
+                    preview_awb.append({"sequence": int(sequence), "patches": int(patches),
+                                        "measured_r": float(measured_r), "measured_b": float(measured_b),
+                                        "applied_r": float(applied_r), "applied_b": float(applied_b),
+                                        "observed_s": round(time.monotonic() - started, 3)})
+                    flags = re.search(r" applied_b=\d+\.\d+ flags=(\d+)", line)
+                    if flags:
+                        preview_awb[-1]["flags"] = int(flags.group(1))
+                    preview_awb = preview_awb[-60:]
+                if "portrait_display: ui_perf " in line:
+                    allowed={"scene","ms","frames","chunks","pixels","submits","frame_us","frame_max","layout_us","draw_us","flush_us","copy_us","sync_us","submit_us","reads","read_us","read_max","touch_gap","gaps","hits","misses","evicts","decode_us","bitmap_us","descriptor_us","stack_min"}
+                    sample={key:int(value) for key,value in re.findall(r"(\w+)=(\d+)",line) if key in allowed}
+                    sample["observed_s"]=round(time.monotonic()-started,3)
+                    ui_perf.append(sample);ui_perf=ui_perf[-16:]
                 display = re.search(r"display_health dma=(\d+) submitted=(\d+) max_gap_us=(\d+) late=(\d+) late_gap_us=(\d+) late_age_us=(\d+) pwm=(\d+) timeout_s=(\d+)", line)
                 if display:
                     sample = dict(zip(("dma", "submitted", "max_gap_us", "late", "late_gap_us", "late_age_us", "pwm", "timeout_s"), map(int, display.groups())))
                     sample["observed_s"] = round(time.monotonic() - started, 3)
+                    ui_copy = re.search(r" ui_cpu=(\d+) ui_done=(\d+)", line)
+                    if ui_copy:
+                        sample.update(zip(("ui_cpu", "ui_done"), map(int, ui_copy.groups())))
                     display_health.append(sample)
                     display_health = display_health[-60:]
                 power = re.search(r"screen_idle: (?:gate_busy=\d+ held=\d+ timeout_s=\d+|asleep=\d+ timeout_s=\d+|awake=\d+ brightness=\d+|(?:sleep|wake)_error=-?\d+)|Setting LCD backlight: \d+%", line)
@@ -111,6 +133,10 @@ def main():
                 if failure:
                     asr_failures.append(dict(zip(("stage", "error", "internal", "largest"), map(int, failure.groups()))))
                     asr_failures = asr_failures[-10:]
+                fonts = re.search(r"speech_text: page_fonts reused=(\d+) ready=(\d+) stage=(\d+) error=(-?\d+) duration_ms=(\d+)", line)
+                if fonts:
+                    asr_font_results.append(dict(zip(("reused", "ready", "stage", "error", "duration_ms"), map(int, fonts.groups()))))
+                    asr_font_results = asr_font_results[-10:]
                 tls = re.search(r"(mbedtls_(?:ctr_drbg_seed|x509_crt_parse|ssl_set_hostname|ssl_config_defaults|ssl_setup|net_connect|ssl_handshake)) error,?\s*return (-?0x[0-9a-fA-F]+)", line)
                 if tls:
                     tls_errors.append({"stage": tls.group(1), "code": tls.group(2)})
@@ -125,7 +151,10 @@ def main():
                     asr_entries = asr_entries[-10:]
                 health = re.search(r"text_entry: health ticks=(\d+) stage=(\d+) refresh=(\d+) keys=(\d+) draw=(\d+) internal=(\d+) external=(\d+)", line)
                 if health:
-                    editor_health.append(dict(zip(("ticks", "stage", "refresh", "keys", "draw", "internal", "external"), map(int, health.groups()))))
+                    item = dict(zip(("ticks", "stage", "refresh", "keys", "draw", "internal", "external"), map(int, health.groups())))
+                    flush = re.search(r" external=\d+ flush=(\d+)", line)
+                    if flush: item["flush"] = int(flush.group(1))
+                    editor_health.append(item)
                     editor_health = editor_health[-30:]
                 panic = re.search(r"Guru Meditation Error: Core\s+(\d+) panic'ed \(([A-Za-z0-9 _/-]+)\)", line)
                 if panic:
@@ -172,14 +201,17 @@ def main():
                       "first_seen_s": first_seen, "startup_home": startup_home,
                       "preview_samples": preview_samples,
                       "preview_stages": preview_stages,
+                      "preview_awb": preview_awb,
                       "panic_diagnostics": panic_diagnostics,
                       "editor_health": editor_health,
                       "asr_entries": asr_entries,
                       "asr_failures": asr_failures,
+                      "asr_font_results": asr_font_results,
                       "network_health": network_health,
                       "wifi_worker_health": wifi_worker_health,
                       "wifi_disconnect_reasons": wifi_disconnect_reasons,
                       "tls_errors": tls_errors,
+                      "ui_perf": ui_perf,
                       "display_health": display_health,
                       "display_power_events": display_power_events,
                       "raw_log_saved": False, "port_released": True}, indent=2))

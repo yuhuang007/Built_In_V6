@@ -1,0 +1,543 @@
+{
+  "date": "2026-11-02",
+  "type": "Local HTML prototypes only",
+  "bottomNavigation": "Removed from all four schemes",
+  "variants": [
+    {
+      "folder": "01-chengye",
+      "interactionChecksPassed": true,
+      "initialRunErrors": [],
+      "initialErrorsResolvedByFinalRetest": true,
+      "geometry": {
+        "candidate": {
+          "bottom": 673.3333358764648,
+          "clientWidth": 539,
+          "height": 79.33333587646484,
+          "scrollWidth": 539,
+          "top": 594,
+          "width": 540
+        },
+        "composer": {
+          "bottom": 1056.0000610351562,
+          "clientWidth": 600,
+          "height": 382.66668701171875,
+          "scrollWidth": 600,
+          "top": 673.3333740234375,
+          "width": 600
+        },
+        "device": {
+          "bottom": 1056,
+          "clientWidth": 600,
+          "height": 1024,
+          "scrollWidth": 600,
+          "top": 32,
+          "width": 600
+        },
+        "keyboard": {
+          "bottom": 1048.0000305175781,
+          "clientWidth": 540,
+          "height": 273.3333435058594,
+          "scrollWidth": 540,
+          "top": 774.6666870117188,
+          "width": 540
+        },
+        "reader": {
+          "bottom": 451.3333435058594,
+          "clientWidth": 600,
+          "height": 323.3333435058594,
+          "scrollWidth": 600,
+          "top": 128,
+          "width": 600
+        },
+        "toolbar": {
+          "bottom": 576.3333740234375,
+          "clientWidth": 540,
+          "height": 56,
+          "scrollWidth": 540,
+          "top": 520.3333740234375,
+          "width": 540
+        }
+      },
+      "dialog": {
+        "height": 392,
+        "scrollHeight": 392,
+        "scrollWidth": 531,
+        "width": 531
+      },
+      "pages": [
+        {
+          "overflow": false,
+          "route": "menu",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "home",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "transcript",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "camera",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "settings",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "wifi",
+          "titleSize": "28px"
+        }
+      ],
+      "responsive": [
+        {
+          "overflow": false,
+          "width": 390
+        },
+        {
+          "overflow": false,
+          "width": 900
+        },
+        {
+          "overflow": false,
+          "width": 1440
+        }
+      ]
+    },
+    {
+      "folder": "04-qinghe",
+      "interactionChecksPassed": true,
+      "initialRunErrors": [
+        {
+          "message": "Cannot read properties of null (reading 'scrollTop')",
+          "stack": "Uncaught TypeError: Cannot read properties of null (reading 'scrollTop')\n    at $.onscroll (file:///E:/zhoumian/Built-In/Built_In_V6/design/p4-ui-fusions-selected/shared/app.js:190:95)"
+        },
+        {
+          "message": "Cannot read properties of null (reading 'scrollTop')",
+          "stack": "Uncaught TypeError: Cannot read properties of null (reading 'scrollTop')\n    at $.onscroll (file:///E:/zhoumian/Built-In/Built_In_V6/design/p4-ui-fusions-selected/shared/app.js:190:95)"
+        }
+      ],
+      "initialErrorsResolvedByFinalRetest": true,
+      "geometry": {
+        "candidate": {
+          "bottom": 673.3333358764648,
+          "clientWidth": 539,
+          "height": 79.33333587646484,
+          "scrollWidth": 539,
+          "top": 594,
+          "width": 540
+        },
+        "composer": {
+          "bottom": 1056.0000610351562,
+          "clientWidth": 600,
+          "height": 382.66668701171875,
+          "scrollWidth": 600,
+          "top": 673.3333740234375,
+          "width": 600
+        },
+        "device": {
+          "bottom": 1056,
+          "clientWidth": 600,
+          "height": 1024,
+          "scrollWidth": 600,
+          "top": 32,
+          "width": 600
+        },
+        "keyboard": {
+          "bottom": 1048.0000305175781,
+          "clientWidth": 540,
+          "height": 273.3333435058594,
+          "scrollWidth": 540,
+          "top": 774.6666870117188,
+          "width": 540
+        },
+        "reader": {
+          "bottom": 451.3333435058594,
+          "clientWidth": 560,
+          "height": 323.3333435058594,
+          "scrollWidth": 560,
+          "top": 128,
+          "width": 560
+        },
+        "toolbar": {
+          "bottom": 576.3333740234375,
+          "clientWidth": 540,
+          "height": 56,
+          "scrollWidth": 540,
+          "top": 520.3333740234375,
+          "width": 540
+        }
+      },
+      "dialog": {
+        "height": 392,
+        "scrollHeight": 392,
+        "scrollWidth": 531,
+        "width": 531
+      },
+      "pages": [
+        {
+          "overflow": false,
+          "route": "menu",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "home",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "transcript",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "camera",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "settings",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "wifi",
+          "titleSize": "28px"
+        }
+      ],
+      "responsive": [
+        {
+          "overflow": false,
+          "width": 390
+        },
+        {
+          "overflow": false,
+          "width": 900
+        },
+        {
+          "overflow": false,
+          "width": 1440
+        }
+      ]
+    },
+    {
+      "folder": "05-lanqiao",
+      "interactionChecksPassed": true,
+      "initialRunErrors": [],
+      "initialErrorsResolvedByFinalRetest": true,
+      "geometry": {
+        "candidate": {
+          "bottom": 673.3333358764648,
+          "clientWidth": 539,
+          "height": 79.33333587646484,
+          "scrollWidth": 539,
+          "top": 594,
+          "width": 540
+        },
+        "composer": {
+          "bottom": 1056.0000610351562,
+          "clientWidth": 600,
+          "height": 382.66668701171875,
+          "scrollWidth": 600,
+          "top": 673.3333740234375,
+          "width": 600
+        },
+        "device": {
+          "bottom": 1056,
+          "clientWidth": 600,
+          "height": 1024,
+          "scrollWidth": 600,
+          "top": 32,
+          "width": 600
+        },
+        "keyboard": {
+          "bottom": 1048.0000305175781,
+          "clientWidth": 540,
+          "height": 273.3333435058594,
+          "scrollWidth": 540,
+          "top": 774.6666870117188,
+          "width": 540
+        },
+        "reader": {
+          "bottom": 451.3333435058594,
+          "clientWidth": 552,
+          "height": 323.3333435058594,
+          "scrollWidth": 552,
+          "top": 128,
+          "width": 552
+        },
+        "toolbar": {
+          "bottom": 576.3333740234375,
+          "clientWidth": 540,
+          "height": 56,
+          "scrollWidth": 540,
+          "top": 520.3333740234375,
+          "width": 540
+        }
+      },
+      "dialog": {
+        "height": 392,
+        "scrollHeight": 392,
+        "scrollWidth": 531,
+        "width": 531
+      },
+      "pages": [
+        {
+          "overflow": false,
+          "route": "menu",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "home",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "transcript",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "camera",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "settings",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "wifi",
+          "titleSize": "28px"
+        }
+      ],
+      "responsive": [
+        {
+          "overflow": false,
+          "width": 390
+        },
+        {
+          "overflow": false,
+          "width": 900
+        },
+        {
+          "overflow": false,
+          "width": 1440
+        }
+      ]
+    },
+    {
+      "folder": "06-moyu",
+      "interactionChecksPassed": true,
+      "initialRunErrors": [],
+      "initialErrorsResolvedByFinalRetest": true,
+      "geometry": {
+        "candidate": {
+          "bottom": 673.3333358764648,
+          "clientWidth": 539,
+          "height": 79.33333587646484,
+          "scrollWidth": 539,
+          "top": 594,
+          "width": 540
+        },
+        "composer": {
+          "bottom": 1056.0000610351562,
+          "clientWidth": 600,
+          "height": 382.66668701171875,
+          "scrollWidth": 600,
+          "top": 673.3333740234375,
+          "width": 600
+        },
+        "device": {
+          "bottom": 1056,
+          "clientWidth": 600,
+          "height": 1024,
+          "scrollWidth": 600,
+          "top": 32,
+          "width": 600
+        },
+        "keyboard": {
+          "bottom": 1048.0000305175781,
+          "clientWidth": 540,
+          "height": 273.3333435058594,
+          "scrollWidth": 540,
+          "top": 774.6666870117188,
+          "width": 540
+        },
+        "reader": {
+          "bottom": 451.3333435058594,
+          "clientWidth": 600,
+          "height": 323.3333435058594,
+          "scrollWidth": 600,
+          "top": 128,
+          "width": 600
+        },
+        "toolbar": {
+          "bottom": 576.3333740234375,
+          "clientWidth": 540,
+          "height": 56,
+          "scrollWidth": 540,
+          "top": 520.3333740234375,
+          "width": 540
+        }
+      },
+      "dialog": {
+        "height": 392,
+        "scrollHeight": 392,
+        "scrollWidth": 531,
+        "width": 531
+      },
+      "pages": [
+        {
+          "overflow": false,
+          "route": "menu",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "home",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "transcript",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "camera",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "settings",
+          "titleSize": "28px"
+        },
+        {
+          "overflow": false,
+          "route": "wifi",
+          "titleSize": "28px"
+        }
+      ],
+      "responsive": [
+        {
+          "overflow": false,
+          "width": 390
+        },
+        {
+          "overflow": false,
+          "width": 900
+        },
+        {
+          "overflow": false,
+          "width": 1440
+        }
+      ]
+    }
+  ],
+  "finalRetest": {
+    "errors": [],
+    "finalUrl": "file:///E:/zhoumian/Built-In/Built_In_V6/design/p4-ui-fusions-selected/index.html",
+    "gallery": [
+      {
+        "allFourLoaded": true,
+        "target": "home"
+      },
+      {
+        "allFourLoaded": true,
+        "target": "transcript"
+      },
+      {
+        "allFourLoaded": true,
+        "target": "keyboard"
+      },
+      {
+        "allFourLoaded": true,
+        "target": "confirm"
+      },
+      {
+        "allFourLoaded": true,
+        "target": "settings"
+      },
+      {
+        "allFourLoaded": true,
+        "target": "menu"
+      }
+    ],
+    "responsive": [
+      {
+        "overflow": false,
+        "width": 390
+      },
+      {
+        "overflow": false,
+        "width": 900
+      },
+      {
+        "overflow": false,
+        "width": 1440
+      }
+    ],
+    "retests": [
+      {
+        "bottomNavAbsent": true,
+        "detachedScrollSafe": true,
+        "folder": "01-chengye",
+        "homeEntriesAndBack": true
+      },
+      {
+        "bottomNavAbsent": true,
+        "detachedScrollSafe": true,
+        "folder": "04-qinghe",
+        "homeEntriesAndBack": true
+      },
+      {
+        "bottomNavAbsent": true,
+        "detachedScrollSafe": true,
+        "folder": "05-lanqiao",
+        "homeEntriesAndBack": true
+      },
+      {
+        "bottomNavAbsent": true,
+        "detachedScrollSafe": true,
+        "folder": "06-moyu",
+        "homeEntriesAndBack": true
+      }
+    ]
+  },
+  "syntax": {
+    "appJs": "Node --check passed",
+    "tabbitProgram": "AsyncFunction parse passed"
+  },
+  "visualReview": [
+    "previews/home-overview.png",
+    "previews/chat-overview.png",
+    "previews/transcript-overview.png",
+    "previews/keyboard-overview.png",
+    "previews/04-qinghe-confirm.png",
+    "previews/gallery.png"
+  ],
+  "renderedStatesPerScheme": [
+    "menu",
+    "home",
+    "transcript",
+    "keyboard",
+    "confirm"
+  ],
+  "renderer": "Edge headless, isolated temporary profiles",
+  "firmwareChanged": false,
+  "built": false,
+  "flashed": false,
+  "portUsed": false,
+  "hardwareValidation": false
+}

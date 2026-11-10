@@ -1,0 +1,162 @@
+{
+  "date": "2026-11-02",
+  "behavior": {
+    "errors": [],
+    "results": [
+      {
+        "geometry": {
+          "candidate": {
+            "bottom": 600.6667098999023,
+            "clientWidth": 543,
+            "height": 79.33333587646484,
+            "scrollWidth": 543,
+            "top": 521.3333740234375,
+            "width": 544
+          },
+          "composer": {
+            "bottom": 987.3333740234375,
+            "clientWidth": 600,
+            "height": 386.66668701171875,
+            "scrollWidth": 600,
+            "top": 600.6666870117188,
+            "width": 600
+          },
+          "device": {
+            "bottom": 1056,
+            "clientWidth": 600,
+            "height": 1024,
+            "scrollWidth": 600,
+            "top": 32,
+            "width": 600
+          },
+          "keyboard": {
+            "bottom": 977.3333435058594,
+            "clientWidth": 544,
+            "height": 273.3333435058594,
+            "scrollWidth": 544,
+            "top": 704,
+            "width": 544
+          },
+          "reader": {
+            "bottom": 370.6666717529297,
+            "clientWidth": 590,
+            "height": 240.6666717529297,
+            "scrollWidth": 590,
+            "top": 130,
+            "width": 600
+          },
+          "toolbar": {
+            "bottom": 503.66668701171875,
+            "clientWidth": 544,
+            "height": 56,
+            "scrollWidth": 544,
+            "top": 447.66668701171875,
+            "width": 544
+          }
+        },
+        "logicalSize": {
+          "height": 1024,
+          "width": 600
+        },
+        "passed": true,
+        "variant": "fusion"
+      }
+    ]
+  },
+  "finalLayout": {
+    "dialog": {
+      "overflowX": false,
+      "overflowY": false
+    },
+    "errors": [],
+    "keyboard": {
+      "candidateHeight": 62,
+      "candidateTop": 521.3333740234375,
+      "inputHeight": 64,
+      "reader": 240.6666717529297,
+      "toolbarBottom": 503.66668701171875
+    },
+    "landingNavigation": true,
+    "offline": true,
+    "previewScenarios": true,
+    "responsive": [
+      {
+        "overflow": false,
+        "width": 390
+      },
+      {
+        "overflow": false,
+        "width": 900
+      },
+      {
+        "overflow": false,
+        "width": 1200
+      }
+    ],
+    "scenes": [
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "menu",
+        "titleLineHeight": "54px",
+        "width": 600
+      },
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "home",
+        "titleLineHeight": "54px",
+        "width": 600
+      },
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "transcript",
+        "titleLineHeight": "54px",
+        "width": 600
+      },
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "camera",
+        "titleLineHeight": "54px",
+        "width": 600
+      },
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "settings",
+        "titleLineHeight": "54px",
+        "width": 600
+      },
+      {
+        "height": 1024,
+        "pageOverflowX": false,
+        "route": "wifi",
+        "titleLineHeight": "54px",
+        "width": 600
+      }
+    ]
+  },
+  "rendering": {
+    "reviewed": true,
+    "tabbitScreenshotLimitation": "file/HTTP截图均超时，用户打开标签后仍超时；未将失败当成成功截图",
+    "files": [
+      "menu.png",
+      "home.png",
+      "transcript.png",
+      "settings.png",
+      "camera.png",
+      "wifi.png",
+      "keyboard.png",
+      "confirm.png"
+    ],
+    "method": "isolated local Edge headless",
+    "canvas": [
+      600,
+      1024
+    ]
+  },
+  "hardwareValidated": false,
+  "firmwareOperations": false
+}

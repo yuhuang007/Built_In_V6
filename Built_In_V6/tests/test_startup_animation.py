@@ -25,8 +25,7 @@ class AnimationTests(unittest.TestCase):
     def test_bootstrap_chinese_glyphs(self):
         font = (MAIN / "font_startup_zh.c").read_text(encoding="utf-8")
         glyphs = {int(cp, 16) for cp in re.findall(r"/\* U\+([0-9A-F]+)", font)}
-        manifest = json.loads((ROOT / "assets/startup/manifest.json").read_text(encoding="utf-8"))
-        self.assertTrue({ord(c) for c in manifest["bootstrap_symbols"]}.issubset(glyphs))
+        # The retained GIF manifest describes the previous design; verify current literals below.
         source = (MAIN / "main.c").read_text(encoding="utf-8")
         startup = source[source.index("static void startup_status_timer"):
                          source.index("void app_main(void)")]
@@ -39,31 +38,40 @@ class AnimationTests(unittest.TestCase):
         source = (MAIN / "main.c").read_text(encoding="utf-8")
         timer = source[source.index("static void startup_status_timer"):
                        source.index("static void create_startup_placeholder")]
-        self.assertIn("lv_bar_set_value(startup_bar, (int)percent", timer)
-        self.assertNotIn("percent = elapsed", timer)
-        self.assertNotIn("percent = 100", timer)
-        self.assertIn("elapsed >= 20000", timer)
-        self.assertIn("startup_last_percent", timer)
+        self.assertIn("startup_stages[i]",timer)
+        self.assertIn("pinyin_service_state()",timer)
+        self.assertIn("wifi_link_up && network_prepared",timer)
+        self.assertIn("startup_last_mask",timer)
+        self.assertNotIn("percent = elapsed",timer)
+        self.assertNotIn("percent = 100",timer)
+        self.assertIn("elapsed >= 20000",timer)
 
-    def test_flash_rgb565_infinite_loop_and_release(self):
+    def test_qinghe_leaf_replaces_boot_logo_without_fullscreen_assets(self):
         source = (MAIN / "main.c").read_text(encoding="utf-8")
-        self.assertIn("LV_COLOR_FORMAT_RGB565", source)
-        self.assertIn("lv_gif_set_loop_count(animation, 0)", source)
-        self.assertIn("startup_gif_asset.data = startup_gif_start", source)
+        cmake = (MAIN / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertNotIn("lv_gif_create", source)
+        self.assertNotIn("startup/loading.gif", cmake)
+        self.assertIn("qh_startup_leaf(startup_overlay)", source)
+        self.assertNotIn("qh_logo(startup_overlay", source)
+        self.assertIn("qh_screen(startup_overlay)", source)
         self.assertIn("lv_obj_delete(startup_overlay)", source)
-        config = (ROOT / "firmware/p4_main/sdkconfig.sign").read_text()
-        self.assertIn("CONFIG_LV_USE_GIF=y", config)
+        logo = (MAIN / "qinghe_logo.c").read_text(encoding="utf-8")
+        self.assertIn("LV_COLOR_FORMAT_RGB565A8", logo)
+        self.assertIn(".w=64,.h=64", logo)
+        self.assertNotIn("lv_label_set_text(startup_percent_label", source)
 
-    def test_black_single_line_and_library_loop_semantics(self):
-        source = (MAIN / "main.c").read_text(encoding="utf-8")
-        self.assertIn("lv_obj_set_style_bg_color(startup_overlay, lv_color_black()", source)
-        self.assertNotIn("startup_network_label", source)
-        self.assertIn("LV_LABEL_LONG_CLIP", source)
-        self.assertNotIn("startup_exit_pending", source)
-        manifest = json.loads((ROOT / "assets/startup/manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["background"], "black")
-        library = (ROOT / "firmware/p4_main/managed_components/lvgl__lvgl/src/widgets/gif/lv_gif.c").read_text(encoding="utf-8")
-        self.assertIn("else if(gifobj->loop_count < 0)", library)
+    def test_leaf_bitmap_matches_selected_qinghe_prototype(self):
+        # Approved design fixture, independent of the optional untracked HTML preview.
+        pattern = "".join(["000010000", "000111000", "011010110",
+                           "111010111", "011010110", "000010000",
+                           "000010000", "001111100", "000010000"])
+        source = (MAIN / "qinghe_ui.c").read_text(encoding="utf-8")
+        packed = source.split("startup_leaf_bits[11] = {", 1)[1].split("};", 1)[0]
+        data = bytes(int(value, 16) for value in re.findall(r"0x([0-9a-f]{2})", packed))
+        self.assertEqual(len(pattern), 81)
+        self.assertEqual(len(data), 11)
+        self.assertEqual("".join(str((data[i // 8] >> (i % 8)) & 1) for i in range(81)), pattern)
+
 
 
 if __name__ == "__main__":

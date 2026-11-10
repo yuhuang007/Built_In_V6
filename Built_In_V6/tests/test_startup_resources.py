@@ -26,7 +26,7 @@ class StartupTests(unittest.TestCase):
         self.assertNotIn("lv_layer_top()", create)
         timer = source[source.index("static void startup_status_timer"):
                        source.index("static void create_startup_placeholder")]
-        self.assertLess(timer.index("lv_screen_load(startup_home_screen)"),
+        self.assertLess(timer.index("qh_screen_load(startup_home_screen, false)"),
                         timer.index("lv_obj_delete(startup_overlay)"))
         self.assertNotIn("lv_obj_delete(startup_home_screen)", timer)
 
@@ -54,9 +54,10 @@ class StartupTests(unittest.TestCase):
                        source.index("static void create_startup_placeholder")]
         self.assertIn("const bool preparation_ended = fonts_done &&", timer)
         self.assertIn("elapsed >= 60000", timer)
-        self.assertIn("font_percent * 15 / 100", timer)
-        self.assertIn("font_percent * 24 / 100", timer)
-        self.assertIn("LV_ANIM_ON", timer)
+        self.assertIn("pinyin_service_state()", timer)
+        self.assertIn("startup_stage_labels[i]", timer)
+        self.assertNotIn("percent +=", timer)
+        self.assertIn("if (qh_navigation_busy()) return", timer)
 
     def test_fonts_survive_page_exit(self):
         source = (MAIN / "speech_to_text_mode.c").read_text(encoding="utf-8")

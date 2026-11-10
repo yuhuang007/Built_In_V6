@@ -10,3 +10,6 @@ bool sign_language_mode_active(void);
 esp_err_t sign_language_mode_start(const lv_font_t *font,
                                    sign_language_prepare_fn prepare,
                                    sign_language_resume_fn resume);
+
+/* UI requests the existing worker-owned release path before settings. */
+void sign_language_mode_request_return(void);

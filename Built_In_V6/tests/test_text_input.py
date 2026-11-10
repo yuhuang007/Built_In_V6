@@ -92,8 +92,11 @@ class InputRoutingTests(unittest.TestCase):
         self.assertIn("lv_obj_set_style_text_font(language_label, owner->font, 0)", source)
         self.assertIn('lv_label_set_text(language_label, chinese() ? "拼" : "E")', source)
         self.assertNotIn("lv_dropdown_", source)
-        self.assertIn("lv_obj_set_style_text_font(candidates, font, LV_PART_ITEMS)", source)
-        self.assertIn("lv_obj_set_style_text_color(candidates, lv_color_black(), LV_PART_ITEMS)", source)
+        self.assertIn('qh_label(candidate_buttons[i], font, "", QH_INK)', source)
+        self.assertIn("lv_obj_set_style_text_font(candidate_captions[i], font, 0)", source)
+        icon_start = source.index("static lv_obj_t *icon_button(")
+        icons = source[icon_start:source.index("static void build_dock(", icon_start)]
+        self.assertIn("LV_FONT_DEFAULT", icons)
         home = (MAIN / "main.c").read_text(encoding="utf-8")
         self.assertIn("object != typing_icon_label", home)
         self.assertIn("typing_icon_label = typing_icon", home)
@@ -136,9 +139,9 @@ class InputRoutingTests(unittest.TestCase):
         idle = (MAIN / "main.c").read_text(encoding="utf-8")
         self.assertIn("if (screen_idle_keyboard_activity()) return;", idle)
 
-    def test_inline_dock_wraps_pinyin_and_preserves_draft_between_pages(self):
+    def test_inline_dock_truncates_visible_pinyin_and_preserves_full_draft(self):
         source = (MAIN / "text_entry.c").read_text(encoding="utf-8")
-        self.assertIn("lv_label_set_long_mode(composition, LV_LABEL_LONG_WRAP)", source)
+        self.assertIn("lv_label_set_long_mode(composition, LV_LABEL_LONG_DOT)", source)
         self.assertNotIn("LV_LABEL_LONG_SCROLL", source)
         self.assertNotIn("lv_screen_load", source)
         self.assertIn("expanded && touch_keyboard ? UI_INPUT_TOUCH : UI_INPUT_COLLAPSED", source)
@@ -156,7 +159,7 @@ class InputRoutingTests(unittest.TestCase):
         self.assertIn("candidate_panel = lv_obj_create(parent)", source)
         self.assertIn("lv_obj_set_pos(candidate_panel, UI_MARGIN, top - height - 8)", source)
         self.assertIn("portrait_editor_cpu_region(cpu_region_top)", source)
-        self.assertIn("lv_obj_set_style_bg_opa(candidate_panel, LV_OPA_80, 0)", source)
+        self.assertIn("qh_panel(candidate_panel, QH_SOFT, 20)", source)
         toggle = source[source.index("static void toggle_keyboard("):source.index("static void focus_input(")]
         self.assertIn("text_entry_focus(true)", toggle)
         for name in ["main.c", "speech_to_text_mode.c"]:
@@ -164,16 +167,16 @@ class InputRoutingTests(unittest.TestCase):
 
     def test_compact_composer_and_mode_controls_have_explicit_anchors(self):
         source = (MAIN / "text_entry.c").read_text(encoding="utf-8")
-        self.assertIn("lv_obj_set_size(input, 432, 56)", source)
+        self.assertIn("lv_obj_set_size(input, 432, UI_INPUT_COLLAPSED)", source)
         self.assertIn("target->top = top", source)
         self.assertIn("target->language_button = language_button", source)
         home = (MAIN / "main.c").read_text(encoding="utf-8")
         layout = home[home.index("static void home_input_layout("):home.index("static void physical_keyboard_key(")]
         self.assertNotIn("lv_obj_set_hidden", layout)
-        self.assertIn("top - 20 - UI_CHAT_TOP", layout)
+        self.assertIn("top - 94 - UI_CHAT_TOP", layout)
         self.assertIn("text_entry_toggle_language(event)", layout)
         asr = (MAIN / "speech_to_text_mode.c").read_text(encoding="utf-8")
-        for name in ["back", "clear", "hold"]:
+        for name in ["clear", "hold"]:
             self.assertLess(asr.index(f"lv_obj_set_align({name}, LV_ALIGN_TOP_LEFT)"),
                             asr.index(f"lv_obj_set_pos({name},"))
         layout = asr[asr.index("static void input_layout("):asr.index("static void clear_event(")]
@@ -182,14 +185,14 @@ class InputRoutingTests(unittest.TestCase):
 
     def test_visible_input_has_explicit_contrast_and_shared_cached_font(self):
         source = (MAIN / "text_entry.c").read_text(encoding="utf-8")
-        self.assertIn("lv_obj_set_style_bg_color(input, lv_color_white(), LV_PART_MAIN)", source)
-        self.assertIn("lv_obj_set_style_text_color(input, lv_color_black(), LV_PART_MAIN)", source)
+        self.assertIn("qh_panel(input, QH_SURFACE, 18)", source)
+        self.assertIn("lv_obj_set_style_text_color(input, qh_color(QH_INK), LV_PART_MAIN)", source)
         self.assertIn("lv_obj_set_style_text_opa(input, LV_OPA_COVER, LV_PART_MAIN)", source)
-        self.assertIn("lv_obj_set_style_text_color(language_label, lv_color_white(), 0)", source)
+        self.assertIn("lv_obj_set_style_text_color(language_label, qh_color(QH_INK), 0)", source)
         self.assertIn("lv_obj_set_size(language_label, 52, owner->font->line_height)", source)
         self.assertIn("lv_obj_set_style_pad_top(input, 0, LV_PART_MAIN)", source)
         self.assertIn("lv_obj_set_style_pad_bottom(input, 0, LV_PART_MAIN)", source)
-        self.assertIn("lv_obj_set_style_bg_color(candidates, lv_color_white(), LV_PART_ITEMS)", source)
+        self.assertIn("qh_button(candidate_buttons[i], QH_SURFACE)", source)
         home = (MAIN / "main.c").read_text(encoding="utf-8")
         apply = home[home.index("static void apply_subtitle_font("):home.index("static void refresh_ui_font_from_sdcard(")]
         self.assertIn("const lv_font_t *title_font = speech_to_text_mode_cached_font28()", apply)

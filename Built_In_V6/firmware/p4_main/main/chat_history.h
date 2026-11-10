@@ -10,6 +10,7 @@ esp_err_t chat_history_init(void);
 void chat_history_create_ui(lv_obj_t *parent, const lv_font_t *font);
 void chat_history_set_font(const lv_font_t *font);
 void chat_history_set_view_height(int height);
+void chat_history_set_view_bounds(int top,int bottom);
 /* Worker opens only the dedicated /sdcard/CHATLOG/H0.BIN and H1.BIN files. */
 esp_err_t chat_history_start_storage(void);
 uint32_t chat_history_begin_turn(void);

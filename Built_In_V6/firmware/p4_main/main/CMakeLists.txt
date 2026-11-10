@@ -1,4 +1,4 @@
-set(app_sources "main.c" "font_project_zh.c" "font_startup_zh.c" "p4_font_loader.c"
+set(app_sources "qinghe_ui.c" "qinghe_theme.c" "qinghe_logo.c" "qinghe_home.c" "qinghe_home_art.c" "main.c" "font_project_zh.c" "font_startup_zh.c" "p4_font_loader.c"
                 "chat_history.c" "chat_store_codec.c" "device_about.c" "screen_idle.c" "screen_idle_policy.c"
                 "wifi_settings.c" "text_entry.c" "usb_keyboard.c" "cloud_text.c"
                 "pinyin_service.c" "pinyin_asset.c")
@@ -61,10 +61,4 @@ if(CONFIG_P4_SIGN_LANGUAGE_MODE)
         "-Wl,--undefined=__wrap_lvgl_port_add_disp_dsi"
         "-Wl,--wrap=dw_gdma_channel_register_event_callbacks"
         "-Wl,--undefined=__wrap_dw_gdma_channel_register_event_callbacks")
-endif()
-
-if(CONFIG_LV_USE_GIF)
-    target_add_binary_data(${COMPONENT_LIB}
-        "${CMAKE_CURRENT_LIST_DIR}/../../../assets/startup/loading.gif" BINARY
-        RENAME_TO startup_loading_gif)
 endif()

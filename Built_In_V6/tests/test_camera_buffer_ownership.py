@@ -9,6 +9,63 @@ from test_portrait_layout import function, TCC, ROOT, MAIN
 
 
 class CameraOwnershipTests(unittest.TestCase):
+    def test_awb_applies_independent_channels_and_keeps_last_hardware_state(self):
+        if not TCC.exists():
+            self.skipTest("Optional host TCC unavailable")
+        source = (MAIN / "sign_language_mode.c").read_text(encoding="utf-8")
+        code = r'''
+#include <stdbool.h>
+#include <stdint.h>
+typedef int esp_err_t;
+#define ESP_OK 0
+#define IPA_METADATA_FLAGS_RG 2
+#define IPA_METADATA_FLAGS_BG 4
+#define PROBE_WBG_UNITY_GAIN 256
+#define ESP_RETURN_ON_ERROR(call, tag, message) do { int e=(call); if(e) return e; } while(0)
+typedef struct { uint32_t flags; float red_gain, blue_gain; } esp_ipa_metadata_t;
+typedef struct { void *isp; float red_gain, blue_gain; } white_balance_context_t;
+typedef struct { uint32_t gain_r, gain_g, gain_b; } isp_wbg_gain_t;
+static isp_wbg_gain_t applied;
+static int writes, failure;
+static int esp_isp_wbg_set_wb_gain(void *isp, isp_wbg_gain_t gain) {
+    writes++; if(failure) return failure; applied=gain; return 0;
+}
+'''
+        code += function(source, "static esp_err_t apply_white_balance_metadata(")
+        code += r'''
+__declspec(dllexport) int awb_case(void) {
+    white_balance_context_t c={0,1.5f,1.75f};
+    esp_ipa_metadata_t m={0,0,0};
+    if(apply_white_balance_metadata(&c,&m) || writes) return 1;
+    m=(esp_ipa_metadata_t){IPA_METADATA_FLAGS_RG,2.0f,0};
+    if(apply_white_balance_metadata(&c,&m) || writes!=1 ||
+        applied.gain_r!=512 || applied.gain_g!=256 || applied.gain_b!=448) return 2;
+    m=(esp_ipa_metadata_t){IPA_METADATA_FLAGS_BG,0,1.25f};
+    if(apply_white_balance_metadata(&c,&m) || writes!=2 ||
+        applied.gain_r!=512 || applied.gain_b!=320) return 3;
+    m=(esp_ipa_metadata_t){6,1.0f,2.0f};
+    if(apply_white_balance_metadata(&c,&m) || writes!=3 ||
+        applied.gain_r!=256 || applied.gain_b!=512) return 4;
+    failure=-7; m=(esp_ipa_metadata_t){2,3.0f,0};
+    if(apply_white_balance_metadata(&c,&m)!=-7 ||
+        c.red_gain!=1.0f || c.blue_gain!=2.0f) return 5;
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(dir=ROOT / "logs") as directory:
+            work = Path(directory)
+            (work / "awb.c").write_text(code, encoding="utf-8")
+            result = subprocess.run([str(TCC), "-shared", str(work / "awb.c"),
+                                     "-o", str(work / "awb.dll")], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lib = ctypes.CDLL(str(work / "awb.dll"))
+            try:
+                self.assertEqual(lib.awb_case(), 0)
+            finally:
+                free = ctypes.windll.kernel32.FreeLibrary
+                free.argtypes = [ctypes.c_void_p]
+                free(lib._handle)
+
     def test_tone_curve_is_bounded_monotonic_and_lifts_midtones(self):
         if not TCC.exists():
             self.skipTest("Optional host TCC unavailable")

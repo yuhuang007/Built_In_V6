@@ -1,5 +1,6 @@
 #include "text_entry.h"
 #include "ui_layout.h"
+#include "qinghe_ui.h"
 #include "pinyin_service.h"
 #if CONFIG_P4_SIGN_LANGUAGE_MODE
 #include "portrait_display.h"
@@ -15,6 +16,7 @@
 static lv_obj_t *editor, *input, *keyboard, *language, *status, *send, *cancel;
 static lv_obj_t *composition, *candidates, *previous, *next, *candidate_panel;
 static lv_obj_t *language_label;
+static lv_obj_t *candidate_buttons[P4_PINYIN_PAGE], *candidate_captions[P4_PINYIN_PAGE];
 static text_entry_submit_fn submit_text;
 static void *submit_context;
 static bool pending, lookup_busy, choosing, decoder_ready;
@@ -26,7 +28,7 @@ static char spelling[P4_PINYIN_MAX + 1];
 static uint32_t deferred_keys[32];
 static unsigned deferred_count;
 static char candidate_labels[P4_PINYIN_PAGE][P4_PINYIN_TEXT + 4];
-static const char *candidate_map[P4_PINYIN_PAGE * 2];
+
 typedef struct {
     lv_obj_t *parent;
     const lv_font_t *font;
@@ -57,11 +59,17 @@ static void health_report(void *unused)
 {
     (void)unused;
     if (!atomic_load(&health_active)) return;
-    ESP_LOGI("text_entry", "health ticks=%u stage=%u refresh=%u keys=%u draw=%u internal=%u external=%u",
+    ESP_LOGI("text_entry", "health ticks=%u stage=%u refresh=%u keys=%u draw=%u internal=%u external=%u flush=%u",
              atomic_load(&health_ticks), atomic_load(&health_stage),
              atomic_load(&health_refresh), atomic_load(&health_keys), atomic_load(&health_draw),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+             portrait_flush_stage()
+#else
+             0u
+#endif
+             );
 }
 
 static void refresh_event(lv_event_t *event)
@@ -117,7 +125,7 @@ static void refresh_language_label(void)
 {
     if (!language_label || !owner) return;
     lv_obj_set_style_text_font(language_label, owner->font, 0);
-    lv_obj_set_style_text_color(language_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(language_label, qh_color(QH_INK), 0);
     lv_obj_set_style_text_opa(language_label, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(language_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_size(language_label, 52, owner->font->line_height);
@@ -200,7 +208,7 @@ static void close_editor(lv_event_t *event)
 
 static void choose_candidate(unsigned index)
 {
-    if (!pending && !lookup_busy && index < candidate_count)
+    if (owner && owner->enabled && !pending && !lookup_busy && index < candidate_count)
         lookup((int)(page_offset + index));
 }
 
@@ -319,7 +327,7 @@ static void poll_completion(lv_timer_t *timer)
 static void candidate_event(lv_event_t *event)
 {
     (void)event;
-    choose_candidate(lv_buttonmatrix_get_selected_button(candidates));
+    choose_candidate((unsigned)(uintptr_t)lv_event_get_user_data(event));
 }
 
 static void change_page(bool forward)
@@ -439,6 +447,7 @@ static lv_obj_t *icon_button(const char *symbol, int x, int y, int size, lv_even
     lv_obj_t *button = lv_button_create(editor);
     lv_obj_set_size(button, size, size);
     lv_obj_set_pos(button, x, y);
+    qh_button(button, strcmp(symbol, LV_SYMBOL_UP) == 0 ? QH_ACCENT : QH_SOFT);
     lv_obj_t *label = lv_label_create(button);
     lv_obj_set_style_text_font(label, LV_FONT_DEFAULT, 0);
     lv_label_set_text(label, symbol);
@@ -499,25 +508,27 @@ static void build_dock(dock_owner_t *target)
     lv_obj_set_size(editor, UI_CONTENT_WIDTH, UI_INPUT_COLLAPSED);
     lv_obj_set_scrollable(editor, false);
     lv_obj_remove_flag(editor, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-    lv_obj_set_style_bg_color(editor, lv_color_hex(0x10233F), 0);
+    lv_obj_set_style_bg_color(editor, qh_color(QH_BG), 0);
     lv_obj_set_style_bg_opa(editor, LV_OPA_COVER, 0);
     lv_obj_add_event_cb(editor, deleted, LV_EVENT_DELETE, NULL);
     cancel = icon_button(LV_SYMBOL_KEYBOARD, 0, 4, 52, toggle_keyboard);
     send = icon_button(LV_SYMBOL_UP, 500, 4, 52, submit);
     lv_obj_set_width(send, 60);
     input = lv_textarea_create(editor);
-    lv_obj_set_size(input, 432, 56);
+    lv_obj_set_size(input, 432, UI_INPUT_COLLAPSED);
     lv_obj_set_pos(input, 60, 0);
     lv_obj_set_style_text_font(input, font, 0);
     lv_obj_set_style_pad_top(input, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(input, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(input, lv_color_white(), LV_PART_MAIN);
+    qh_panel(input, QH_SURFACE, 18);
+    lv_obj_set_style_border_width(input, 1, 0);
+    lv_obj_set_style_border_color(input, qh_color(QH_LINE), 0);
     lv_obj_set_style_bg_opa(input, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(input, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(input, qh_color(QH_INK), LV_PART_MAIN);
     lv_obj_set_style_text_opa(input, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(input, lv_color_hex(0x526171), LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_text_color(input, qh_color(QH_MUTED), LV_PART_TEXTAREA_PLACEHOLDER);
     lv_obj_set_style_text_opa(input, LV_OPA_COVER, LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_bg_color(input, lv_color_black(), LV_PART_CURSOR);
+    lv_obj_set_style_bg_color(input, qh_color(QH_INK), LV_PART_CURSOR);
     lv_textarea_set_text(input, target->draft);
     lv_textarea_set_placeholder_text(input, "输入文字");
     lv_obj_add_event_cb(input, focus_input, LV_EVENT_CLICKED, NULL);
@@ -529,47 +540,38 @@ static void build_dock(dock_owner_t *target)
     lv_obj_remove_style_all(candidate_panel);
     lv_obj_set_size(candidate_panel, UI_CONTENT_WIDTH, UI_CANDIDATE_HEIGHT);
     lv_obj_set_scrollable(candidate_panel, false);
-    lv_obj_set_style_bg_color(candidate_panel, lv_color_hex(0x10233F), 0);
-    lv_obj_set_style_bg_opa(candidate_panel, LV_OPA_80, 0);
+    lv_obj_set_style_bg_color(candidate_panel, qh_color(QH_BG), 0);
+    qh_panel(candidate_panel, QH_SOFT, 20);
     status = lv_label_create(candidate_panel);
     lv_obj_set_size(status, 440, 48);
     lv_obj_set_pos(status, 0, 284);
     lv_obj_set_style_text_font(status, font, 0);
-    lv_obj_set_style_text_color(status, lv_color_white(), 0);
-    lv_label_set_long_mode(status, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(status, qh_color(QH_MUTED), 0);
+    lv_label_set_long_mode(status, LV_LABEL_LONG_DOT);
     composition = lv_label_create(candidate_panel);
     lv_obj_set_size(composition, UI_CONTENT_WIDTH, 64);
     lv_obj_set_pos(composition, 0, 8);
     lv_obj_set_style_text_font(composition, font, 0);
-    lv_obj_set_style_text_color(composition, lv_color_white(), 0);
-    lv_label_set_long_mode(composition, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(composition, qh_color(QH_INK), 0);
+    lv_label_set_long_mode(composition, LV_LABEL_LONG_DOT);
     previous = icon_button(LV_SYMBOL_LEFT, 456, 284, 44, page_event);
     next = icon_button(LV_SYMBOL_RIGHT, 512, 284, 44, page_event);
     lv_obj_set_parent(previous, candidate_panel);
     lv_obj_set_parent(next, candidate_panel);
-    candidates = lv_buttonmatrix_create(candidate_panel);
-    lv_obj_set_size(candidates, UI_CONTENT_WIDTH, 204);
-    lv_obj_set_pos(candidates, 0, 76);
-    lv_obj_set_style_text_font(candidates, font, LV_PART_MAIN);
-    lv_obj_set_style_text_font(candidates, font, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(candidates, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(candidates, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(candidates, lv_color_white(), LV_PART_ITEMS);
-    lv_obj_set_style_bg_opa(candidates, LV_OPA_80, LV_PART_ITEMS);
-    lv_obj_set_style_text_opa(candidates, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(candidates, lv_color_black(), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(candidates, lv_color_black(), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(candidates, lv_color_black(), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_pad_all(candidates, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(candidates, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(candidates, 0, LV_PART_MAIN);
-    for (unsigned i = 0; i < P4_PINYIN_PAGE; ++i) {
-        strcpy(candidate_labels[i], " ");
+    candidates = lv_obj_create(candidate_panel);
+    lv_obj_remove_style_all(candidates);
+    lv_obj_set_scroll_dir(candidates, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(candidates, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_elastic(candidates, false);
+    lv_obj_set_flex_flow(candidates, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(candidates, 8, 0);
+    for (unsigned i=0;i<P4_PINYIN_PAGE;i++) {
+        candidate_buttons[i] = lv_button_create(candidates);
+        qh_button(candidate_buttons[i], QH_SURFACE);
+        candidate_captions[i] = qh_label(candidate_buttons[i], font, "", QH_INK);
+        lv_label_set_long_mode(candidate_captions[i], LV_LABEL_LONG_DOT);
+        lv_obj_add_event_cb(candidate_buttons[i], candidate_event, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
     }
-    candidate_map[0] = " ";
-    candidate_map[1] = "";
-    lv_buttonmatrix_set_map(candidates, candidate_map);
-    lv_obj_add_event_cb(candidates, candidate_event, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_t *draw_objects[] = {editor, cancel, send, input, status,
                                composition, previous, next, candidates, keyboard};
     for (unsigned i = 0; i < sizeof(draw_objects) / sizeof(draw_objects[0]); ++i) {
@@ -592,39 +594,32 @@ static int layout_candidates(int top)
     const lv_font_t *font = owner->font;
     const char *footer = lv_label_get_text(status);
     lv_point_t size;
-    int width = 200;
-    /* Measure actual glyph advances, not UTF-8 byte counts or nominal font size. */
-    for (unsigned i = 0; i < candidate_count + 2; ++i) {
-        const char *text = i < candidate_count ? candidate_labels[i] :
-                           i == candidate_count ? spelling : footer;
-        lv_text_get_size(&size, text, font, 0, 4, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        const int needed = size.x + (i == candidate_count + 1 ? 128 : 24);
-        if (needed > width) width = needed;
-    }
-    if (width > UI_CONTENT_WIDTH) width = UI_CONTENT_WIDTH;
+    const int width = UI_CONTENT_WIDTH;
     lv_text_get_size(&size, spelling, font, 0, 4, width - 16, LV_TEXT_FLAG_NONE);
-    const int composition_height = spelling[0] ? size.y : 0;
+    const int composition_height = spelling[0] ? font->line_height : 0;
     lv_text_get_size(&size, footer, font, 0, 4, width - 128, LV_TEXT_FLAG_NONE);
-    const int footer_height = size.y > 48 ? size.y : 48;
-    const int row_height = font->line_height + 8;
+    const int footer_height = size.y > font->line_height*2 ? font->line_height*2 : size.y > 48 ? size.y : 48;
+    const int row_height = font->line_height + 8 > 62 ? font->line_height + 8 : 62;
     const int list_top = 8 + composition_height + (composition_height ? 8 : 0);
-    const int list_height = candidate_count * row_height;
+    const int list_height = candidate_count ? row_height + 8 : 0;
     const int footer_top = list_top + list_height + 8;
     const int height = footer_top + footer_height + 8;
-    unsigned map_index = 0;
-    for (unsigned i = 0; i < candidate_count; ++i) {
-        if (i) candidate_map[map_index++] = "\n";
-        candidate_map[map_index++] = candidate_labels[i];
-    }
-    if (!map_index) candidate_map[map_index++] = " ";
-    candidate_map[map_index] = "";
-    lv_buttonmatrix_set_map(candidates, candidate_map);
     lv_obj_set_size(candidate_panel, width, height);
     lv_obj_set_pos(candidate_panel, UI_MARGIN, top - height - 8);
     lv_obj_set_size(composition, width - 16, composition_height ? composition_height : 1);
     lv_obj_set_pos(composition, 8, 8);
     lv_obj_set_size(candidates, width, list_height ? list_height : 1);
     lv_obj_set_pos(candidates, 0, list_top);
+    for (unsigned i=0;i<P4_PINYIN_PAGE;i++) {
+        lv_obj_set_hidden(candidate_buttons[i], i>=candidate_count);
+        if (i>=candidate_count) continue;
+        lv_text_get_size(&size, candidate_labels[i], font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        int w=size.x+32; if(w<100)w=100; if(w>UI_CONTENT_WIDTH-32)w=UI_CONTENT_WIDTH-32;
+        lv_obj_set_size(candidate_buttons[i], w, row_height);
+        lv_obj_set_width(candidate_captions[i], w-24);
+        lv_label_set_text(candidate_captions[i], candidate_labels[i]);
+        lv_obj_center(candidate_captions[i]);
+    }
     lv_obj_set_size(status, width - 128, footer_height);
     lv_obj_set_pos(status, 8, footer_top);
     lv_obj_set_pos(previous, width - 112, footer_top);
@@ -643,7 +638,9 @@ static void layout_dock(void)
     lv_obj_set_pos(editor, UI_MARGIN, top);
     /* Physical IME floats above the fixed composer, without moving the history. */
     const int popup_top = layout_candidates(top);
+    const bool candidate_appearing = popup && lv_obj_has_flag(candidate_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_hidden(candidate_panel, !popup);
+    if (candidate_appearing) qh_reveal(candidate_panel);
     if (keyboard) lv_obj_set_hidden(keyboard, !expanded || !touch_keyboard);
     lv_obj_set_hidden(composition, !expanded);
     lv_obj_set_hidden(candidates, !expanded || !candidate_count);
@@ -651,10 +648,12 @@ static void layout_dock(void)
     lv_obj_set_hidden(next, !expanded || !candidate_count);
 #if CONFIG_P4_SIGN_LANGUAGE_MODE
     /* Keep erased, previously larger popups on the safe CPU-copy path too. */
-    if (popup_top < cpu_region_top) cpu_region_top = popup_top;
+    if (popup_top - 8 < cpu_region_top) cpu_region_top = popup_top - 8;
     portrait_editor_cpu_region(cpu_region_top);
 #endif
-    if (owner->layout) owner->layout(height, owner->layout_context);
+    /* Reserve IME space above the composer. USB never changes composer height
+     * or top; only the reading viewport yields room while candidates exist. */
+    if (owner->layout) owner->layout(height + (popup ? top-popup_top : 0), owner->layout_context);
 }
 
 static void sync_dock(void)
@@ -723,12 +722,19 @@ void text_entry_focus(bool touch)
         lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
         lv_obj_set_pos(keyboard, 0, 76);
         lv_obj_set_style_text_font(keyboard, LV_FONT_DEFAULT, LV_PART_ITEMS);
+        qh_panel(keyboard, QH_BG, 0);
+        lv_obj_set_style_bg_color(keyboard, qh_color(QH_SURFACE), LV_PART_ITEMS);
+        lv_obj_set_style_text_color(keyboard, qh_color(QH_INK), LV_PART_ITEMS);
+        lv_obj_set_style_bg_color(keyboard, qh_color(QH_SOFT), LV_PART_ITEMS | LV_STATE_PRESSED);
+        lv_obj_set_style_shadow_width(keyboard, 0, LV_PART_ITEMS);
         lv_obj_remove_event_cb(keyboard, lv_keyboard_def_event_cb);
         lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_VALUE_CHANGED, NULL);
     }
+    const bool opening_touch = touch && !touch_keyboard;
     expanded = true;
     touch_keyboard = touch;
     layout_dock();
+    if (opening_touch && keyboard) qh_reveal(keyboard);
     ESP_LOGI("text_entry", "dock_height=%d touch=%d", touch ? UI_INPUT_TOUCH : UI_INPUT_COLLAPSED, touch);
 }
 
@@ -740,6 +746,8 @@ void text_entry_set_enabled(lv_obj_t *parent, bool enabled)
     lv_obj_t *controls[] = {input, keyboard, send, cancel, language, candidates};
     for (unsigned i = 0; i < sizeof(controls) / sizeof(controls[0]); ++i)
         if (controls[i]) lv_obj_set_state(controls[i], LV_STATE_DISABLED, !enabled || pending);
+    for (unsigned i=0;i<P4_PINYIN_PAGE;i++)
+        lv_obj_set_state(candidate_buttons[i], LV_STATE_DISABLED, !enabled || pending);
 }
 
 void text_entry_set_font(lv_obj_t *parent, const lv_font_t *font)
@@ -751,7 +759,8 @@ void text_entry_set_font(lv_obj_t *parent, const lv_font_t *font)
     lv_obj_t *labels[] = {input, language_label, status, composition};
     for (unsigned i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i)
         lv_obj_set_style_text_font(labels[i], font, LV_PART_MAIN);
-    lv_obj_set_style_text_font(candidates, font, LV_PART_MAIN);
-    lv_obj_set_style_text_font(candidates, font, LV_PART_ITEMS);
+    for (unsigned i=0;i<P4_PINYIN_PAGE;i++)
+        lv_obj_set_style_text_font(candidate_captions[i], font, 0);
     refresh_language_label();
+    layout_dock();
 }

@@ -18,10 +18,12 @@
 #include "esp_private/dw_gdma.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "portrait_frame_copy.h"
 #include "portrait_display.h"
 #include "ui_layout.h"
 #include "screen_idle.h"
+#include "asr_display_font.h"
 
 static struct {
     esp_lcd_panel_handle_t panel;
@@ -40,7 +42,19 @@ static struct {
     atomic_uint dma_count, dma_last_us, dma_max_gap_us;
     atomic_uint dma_late_count, dma_late_at_us, dma_late_gap_us;
     unsigned submitted;
+    atomic_uint flush_stage;
+    atomic_uint ui_cpu_chunks, ui_flush_done;
+    /* UI-thread-only aggregates, reported by the existing 10s health timer. */
+    struct {
+        unsigned scene, frames, chunks, pixels, submits, reads, gaps;
+        uint32_t frame_max, touch_gap_max, read_max;
+        uint64_t started, frame_start, render_start, frame_flush, last_read;
+        uint64_t frame_us, layout_us, draw_us, flush_us, copy_us, sync_us, submit_us, read_us;
+        bool pressed;
+        uint32_t font[6];
+    } ui;
 } scanout;
+unsigned portrait_flush_stage(void) { return atomic_load(&scanout.flush_stage); }
 static bool editor_cpu_copy;
 static int editor_copy_top;
 
@@ -186,6 +200,66 @@ static void portrait_submit(void)
     scanout.submitted++;
 }
 
+/* Read wrapper preserves the installed BSP callback and sampling schedule. */
+static lv_indev_read_cb_t observed_read;
+static void portrait_touch_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    const uint64_t begin=esp_timer_get_time();
+    observed_read(indev,data);
+    if(!scanout.ui.scene)return;
+    const uint32_t elapsed=esp_timer_get_time()-begin;
+    ++scanout.ui.reads;scanout.ui.read_us+=elapsed;
+    if(elapsed>scanout.ui.read_max)scanout.ui.read_max=elapsed;
+    if(scanout.ui.pressed && data->state==LV_INDEV_STATE_PRESSED){
+        const uint32_t gap=begin-scanout.ui.last_read;
+        if(gap>scanout.ui.touch_gap_max)scanout.ui.touch_gap_max=gap;
+        if(gap>50000)++scanout.ui.gaps;
+    }
+    scanout.ui.pressed=data->state==LV_INDEV_STATE_PRESSED;
+    scanout.ui.last_read=begin;
+}
+void portrait_observe_touch(lv_indev_t *indev)
+{
+    if(!observed_read && indev){
+        observed_read=lv_indev_get_read_cb(indev);
+        if(observed_read)lv_indev_set_read_cb(indev,portrait_touch_read);
+    }
+}
+static void portrait_scene(lv_event_t *event)
+{
+    const unsigned id=(unsigned)(uintptr_t)lv_event_get_user_data(event);
+    const bool loaded=lv_event_get_code(event)==LV_EVENT_SCREEN_LOADED;
+    if(!loaded && scanout.ui.scene!=id)return;
+    const unsigned scene=loaded?id:0;
+    memset(&scanout.ui,0,sizeof(scanout.ui));scanout.ui.scene=scene;
+    scanout.ui.started=esp_timer_get_time();
+    asr_display_font_profile(scanout.ui.font);
+}
+void portrait_observe_screen(lv_obj_t *screen,unsigned scene)
+{
+    lv_obj_add_event_cb(screen,portrait_scene,LV_EVENT_SCREEN_LOADED,(void*)(uintptr_t)scene);
+    lv_obj_add_event_cb(screen,portrait_scene,LV_EVENT_SCREEN_UNLOADED,(void*)(uintptr_t)scene);
+}
+static void portrait_render_timing(lv_event_t *event)
+{
+    if(!scanout.ui.scene)return;
+    const uint64_t now=esp_timer_get_time();
+    switch(lv_event_get_code(event)){
+    case LV_EVENT_REFR_START:scanout.ui.frame_start=now;scanout.ui.frame_flush=0;break;
+    case LV_EVENT_RENDER_START:
+        scanout.ui.layout_us+=now-scanout.ui.frame_start;scanout.ui.render_start=now;break;
+    case LV_EVENT_RENDER_READY:{
+        const uint64_t elapsed=now-scanout.ui.render_start;
+        if(elapsed>scanout.ui.frame_flush)scanout.ui.draw_us+=elapsed-scanout.ui.frame_flush;
+        break;}
+    case LV_EVENT_REFR_READY:{
+        const uint32_t elapsed=now-scanout.ui.frame_start;
+        ++scanout.ui.frames;scanout.ui.frame_us+=elapsed;
+        if(elapsed>scanout.ui.frame_max)scanout.ui.frame_max=elapsed;
+        break;}
+    default:break;
+    }
+}
 /* Never log from the frame ISR. A low-rate UI timer reports numeric evidence
  * only; it does not submit frames, change PWM, or adjust display timing. */
 static void portrait_health(lv_timer_t *timer)
@@ -198,14 +272,32 @@ static void portrait_health(lv_timer_t *timer)
     polls = 0;
     last_late = late;
     last_pwm = pwm;
+    if(scanout.ui.scene){
+        uint32_t font[6];asr_display_font_profile(font);
+        ESP_LOGI("portrait_display", "ui_perf scene=%u ms=%u frames=%u chunks=%u pixels=%u submits=%u"
+            " frame_us=%u frame_max=%u layout_us=%u draw_us=%u flush_us=%u copy_us=%u sync_us=%u submit_us=%u"
+            " reads=%u read_us=%u read_max=%u touch_gap=%u gaps=%u hits=%u misses=%u evicts=%u decode_us=%u bitmap_us=%u descriptor_us=%u stack_min=%u",
+            scanout.ui.scene,(unsigned)((esp_timer_get_time()-scanout.ui.started)/1000),
+            scanout.ui.frames,scanout.ui.chunks,scanout.ui.pixels,scanout.ui.submits,
+            (unsigned)scanout.ui.frame_us,scanout.ui.frame_max,(unsigned)scanout.ui.layout_us,
+            (unsigned)scanout.ui.draw_us,(unsigned)scanout.ui.flush_us,(unsigned)scanout.ui.copy_us,
+            (unsigned)scanout.ui.sync_us,(unsigned)scanout.ui.submit_us,scanout.ui.reads,
+            (unsigned)scanout.ui.read_us,scanout.ui.read_max,scanout.ui.touch_gap_max,scanout.ui.gaps,
+            font[0]-scanout.ui.font[0],font[1]-scanout.ui.font[1],font[2]-scanout.ui.font[2],font[3]-scanout.ui.font[3],
+            font[4]-scanout.ui.font[4],font[5]-scanout.ui.font[5],(unsigned)uxTaskGetStackHighWaterMark(NULL));
+        const unsigned scene=scanout.ui.scene;
+        memset(&scanout.ui,0,sizeof(scanout.ui));scanout.ui.scene=scene;
+        scanout.ui.started=esp_timer_get_time();memcpy(scanout.ui.font,font,sizeof(font));
+    }
     const uint32_t now = (uint32_t)esp_timer_get_time();
     ESP_LOGI("portrait_display", "display_health dma=%u submitted=%u max_gap_us=%u late=%u"
-             " late_gap_us=%u late_age_us=%u pwm=%u timeout_s=%u",
+             " late_gap_us=%u late_age_us=%u pwm=%u timeout_s=%u ui_cpu=%u ui_done=%u",
              atomic_load(&scanout.dma_count), scanout.submitted,
              atomic_load(&scanout.dma_max_gap_us), late,
              atomic_load(&scanout.dma_late_gap_us),
              late ? now - atomic_load(&scanout.dma_late_at_us) : 0,
-             pwm, screen_idle_get_timeout());
+             pwm, screen_idle_get_timeout(), atomic_load(&scanout.ui_cpu_chunks),
+             atomic_load(&scanout.ui_flush_done));
 }
 
 esp_err_t portrait_preview_frame(const uint16_t *source, int width, int height,
@@ -288,40 +380,15 @@ static esp_err_t portrait_copy(uint16_t *dst, int panel_width, int panel_height,
                                const uint16_t *src, int src_stride,
                                int x1, int y1, int x2, int y2)
 {
-    const int width = x2 - x1 + 1;
-    const int height = y2 - y1 + 1;
-    /* Editor dirty rectangles stalled in the hardware flush path. Keep their
-     * copies synchronous in software; framebuffer retirement is unchanged. */
-    if ((editor_cpu_copy && y2 >= editor_copy_top) || width * height < 4096) {
-        portrait_frame_copy(dst, panel_width, panel_height, src, src_stride,
-                             x1, y1, x2, y2);
-        return ESP_OK;
-    }
-    const int native_y = panel_height - 1 - x2;
-    /* PPA invalidates entire destination rows, including pixels outside its
-     * target block. Preserve any CPU dirty-region copies before that happens. */
-    esp_err_t result = esp_cache_msync(dst + native_y * panel_width,
-                                       (size_t)width * panel_width * sizeof(uint16_t),
-                                       ESP_CACHE_MSYNC_FLAG_DIR_C2M);
-    if (result != ESP_OK) return result;
-    const ppa_srm_oper_config_t rotate = {
-        .in = {
-            .buffer = src, .pic_w = src_stride, .pic_h = height,
-            .block_w = width, .block_h = height,
-            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
-        },
-        .out = {
-            .buffer = dst,
-            .buffer_size = (size_t)panel_width * panel_height * sizeof(uint16_t),
-            .pic_w = panel_width, .pic_h = panel_height,
-            .block_offset_x = y1, .block_offset_y = native_y,
-            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
-        },
-        .rotation_angle = PPA_SRM_ROTATION_ANGLE_90,
-        .scale_x = 1.0f, .scale_y = 1.0f,
-        .mode = PPA_TRANS_MODE_BLOCKING,
-    };
-    return ppa_do_scale_rotate_mirror(scanout.rotation, &rotate);
+    /* Temporary isolation: every ordinary LVGL rectangle uses the existing
+     * tiled CPU rotation, including startup and page entry/exit. No editor,
+     * animation, dirty-size or page-state condition can re-enable UI PPA.
+     * Camera composition remains exclusively in portrait_preview_frame(). */
+    atomic_store(&scanout.flush_stage, 3);
+    portrait_frame_copy(dst, panel_width, panel_height, src, src_stride,
+                         x1, y1, x2, y2);
+    atomic_fetch_add_explicit(&scanout.ui_cpu_chunks, 1, memory_order_relaxed);
+    return ESP_OK;
 }
 
 static bool IRAM_ATTR portrait_refresh_done(esp_lcd_panel_handle_t panel,
@@ -342,12 +409,22 @@ static void portrait_flush(lv_display_t *display, const lv_area_t *area,
     assert(lv_display_get_rotation(display) == LV_DISPLAY_ROTATION_90);
     assert(area->x1 >= 0 && area->x2 < scanout.height);
     assert(area->y1 >= 0 && area->y2 < scanout.width);
+    const uint64_t measured=esp_timer_get_time();
+    atomic_store(&scanout.flush_stage, 1);
     portrait_begin_frame(NULL);
+    const uint64_t copy_start=esp_timer_get_time();
+    atomic_store(&scanout.flush_stage, 2);
     const int stride = lv_draw_buf_width_to_stride(lv_area_get_width(area),
                                                    LV_COLOR_FORMAT_RGB565) / 2;
     ESP_ERROR_CHECK(portrait_copy(scanout.frames[scanout.back], scanout.width,
                         scanout.height, (const uint16_t *)pixels, stride,
                         area->x1, area->y1, area->x2, area->y2));
+    const uint64_t copy_end=esp_timer_get_time();
+    if(scanout.ui.scene){
+        ++scanout.ui.chunks;scanout.ui.pixels+=lv_area_get_width(area)*(area->y2-area->y1+1);
+        scanout.ui.sync_us+=copy_start-measured;scanout.ui.copy_us+=copy_end-copy_start;
+    }
+    atomic_store(&scanout.flush_stage, 6);
     const lv_area_t physical = {
         .x1 = area->y1, .x2 = area->y2,
         .y1 = scanout.height - 1 - area->x2,
@@ -370,9 +447,17 @@ static void portrait_flush(lv_display_t *display, const lv_area_t *area,
             if (overlap.x1 <= overlap.x2 && overlap.y1 <= overlap.y2)
                 portrait_sync_region(&overlap, NULL);
         }
+        const uint64_t submit_start=esp_timer_get_time();
         portrait_submit();
+        if(scanout.ui.scene){++scanout.ui.submits;scanout.ui.submit_us+=esp_timer_get_time()-submit_start;}
     }
     lv_display_flush_ready(display);
+    if(scanout.ui.scene){
+        const uint64_t elapsed=esp_timer_get_time()-measured;
+        scanout.ui.flush_us+=elapsed;scanout.ui.frame_flush+=elapsed;
+    }
+    atomic_store(&scanout.flush_stage, 0);
+    atomic_fetch_add_explicit(&scanout.ui_flush_done, 1, memory_order_relaxed);
 }
 
 lv_display_t *__real_lvgl_port_add_disp_dsi(const lvgl_port_display_cfg_t *config,
@@ -418,6 +503,10 @@ lv_display_t *__wrap_lvgl_port_add_disp_dsi(const lvgl_port_display_cfg_t *confi
             scanout.panel, &callbacks, NULL));
         lv_display_set_flush_cb(display, portrait_flush);
         lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
+        lv_display_add_event_cb(display,portrait_render_timing,LV_EVENT_REFR_START,NULL);
+        lv_display_add_event_cb(display,portrait_render_timing,LV_EVENT_REFR_READY,NULL);
+        lv_display_add_event_cb(display,portrait_render_timing,LV_EVENT_RENDER_START,NULL);
+        lv_display_add_event_cb(display,portrait_render_timing,LV_EVENT_RENDER_READY,NULL);
         lv_timer_create(portrait_health, 1000, NULL);
         ESP_LOGI("portrait_display", "complete-frame scanout: two LCD buffers, VSYNC retirement");
     }

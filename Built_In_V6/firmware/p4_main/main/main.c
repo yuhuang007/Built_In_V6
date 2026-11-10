@@ -1,5 +1,7 @@
 #include <inttypes.h>
 #include "ui_layout.h"
+#include "qinghe_ui.h"
+#include "qinghe_home.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -53,6 +55,7 @@
 #include "volc_conv_ai.h"
 #if CONFIG_P4_SIGN_LANGUAGE_MODE
 #include "sign_language_mode.h"
+#include "portrait_display.h"
 #else
 static inline bool sign_language_mode_active(void) { return false; }
 #endif
@@ -124,18 +127,15 @@ static atomic_bool startup_network_prepared;
 static lv_obj_t *startup_overlay;
 static lv_obj_t *startup_home_screen;
 static lv_obj_t *startup_label;
-static lv_obj_t *startup_bar;
-static lv_obj_t *startup_percent_label;
+static lv_obj_t *startup_stages[3], *startup_stage_labels[3];
+static atomic_bool startup_resources_started, startup_resources_failed;
+static atomic_int startup_font_error;
 static uint32_t startup_started;
-static unsigned startup_last_percent;
+static unsigned startup_last_mask=UINT_MAX;
 static bool startup_finishing;
 static uint32_t startup_last_diagnostic;
 extern const lv_font_t lv_font_startup_zh;
-#if LV_USE_GIF
-extern const uint8_t startup_gif_start[] asm("_binary_startup_loading_gif_start");
-extern const uint8_t startup_gif_end[] asm("_binary_startup_loading_gif_end");
-static lv_image_dsc_t startup_gif_asset;
-#endif
+
 static lv_obj_t *font_targets[UI_FONT_TARGET_MAX];
 static size_t font_target_count;
 static lv_obj_t *status_label;
@@ -143,8 +143,11 @@ static lv_obj_t *user_text_label;
 static lv_obj_t *agent_text_label;
 static lv_obj_t *settings_screen;
 static lv_obj_t *settings_home_screen;
-static lv_obj_t *home_ui_screen;
-static lv_obj_t *home_hold_control, *home_camera_control, *home_asr_control;
+static lv_obj_t *home_ui_screen, *menu_screen, *startup_leaf;
+static qh_home_t menu_home;
+static lv_obj_t *home_hold_control, *home_subtitle;
+static int home_input_height=UI_INPUT_COLLAPSED;
+static void home_reading_layout(void);
 static lv_obj_t *home_title_label;
 static lv_obj_t *settings_icon_label;
 static lv_obj_t *typing_icon_label;
@@ -172,12 +175,15 @@ static nvs_handle_t settings_nvs;
 /* 0: ready without saved values, 1: pending, 2: saved, 3: failed. */
 static atomic_int settings_save_status;
 static void settings_schedule_save(void);
+static void settings_relayout(void);
+static lv_obj_t *settings_rows[8];
 static atomic_bool settings_test_enabled;
 /* 0: idle, 1: queued, 2: playing, 3: finished, 4: busy, 5: failed, 6: stopped. */
 static atomic_int settings_test_status;
 static bool settings_volume_changed;
 static uint32_t settings_test_requested_at;
-static bool settings_return_pending;
+static bool settings_return_pending, settings_after_camera;
+static void settings_button_callback(lv_event_t *event);
 static atomic_uint settings_last_audible_pcm_ms;
 #define SETTINGS_TEST_FRAME_LENGTH SIZE_MAX
 static esp_codec_dev_handle_t microphone;
@@ -569,7 +575,7 @@ static const char VOLC_RTC_CONFIG_FORMAT[] =
 static void set_status_text(const char *text)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(1000))) {
-        lv_label_set_text(status_label, text);
+        if(strcmp(lv_label_get_text(status_label),text))lv_label_set_text(status_label, text);
         bsp_display_unlock();
     } else {
         ESP_LOGW(TAG, "could not acquire LVGL lock to update audio status");
@@ -591,7 +597,7 @@ static const lv_font_t *project_ui_font(void)
 
 static void apply_project_font(lv_obj_t *object)
 {
-    const lv_font_t *font = project_ui_font();
+    const lv_font_t *font = settings_cached_font(project_ui_font());
     lv_obj_set_style_text_font(object, font, LV_PART_MAIN);
     for (size_t index = 0; index < font_target_count; ++index) {
         if (font_targets[index] == object) {
@@ -607,12 +613,35 @@ static void apply_global_font_tree(lv_obj_t *object, const lv_font_t *font)
 {
     if (!object) return;
     if (text_entry_is_root(object)) return;
-    if (object != settings_icon_label && object != typing_icon_label &&
+    if (!lv_obj_has_flag(object, LV_OBJ_FLAG_USER_1) && object != settings_icon_label && object != typing_icon_label &&
         lv_obj_check_type(object, &lv_label_class))
         lv_obj_set_style_text_font(object, font, LV_PART_MAIN);
     const uint32_t count = lv_obj_get_child_count(object);
     for (uint32_t i = 0; i < count; ++i)
         apply_global_font_tree(lv_obj_get_child(object, i), font);
+}
+
+static void home_reading_layout(void)
+{
+    if(!home_subtitle || !status_label)return;
+    static bool busy;if(busy)return;busy=true;
+    lv_point_t sub,status;
+    const lv_font_t *sf=lv_obj_get_style_text_font(home_subtitle,0);
+    const lv_font_t *tf=lv_obj_get_style_text_font(status_label,0);
+    lv_text_get_size(&sub,lv_label_get_text(home_subtitle),sf,0,0,UI_CONTENT_WIDTH,LV_TEXT_FLAG_NONE);
+    lv_text_get_size(&status,lv_label_get_text(status_label),tf,0,0,UI_CONTENT_WIDTH,LV_TEXT_FLAG_NONE);
+    const int y=82+sub.y+8;
+    lv_obj_set_align(home_subtitle,LV_ALIGN_TOP_LEFT);lv_obj_set_align(status_label,LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(home_subtitle,UI_MARGIN,82);lv_obj_set_pos(status_label,UI_MARGIN,y);
+    const int limit=UI_HEIGHT-UI_MARGIN-home_input_height;
+    const int dock_top=UI_HOME_INPUT_TOP<limit?UI_HOME_INPUT_TOP:limit;
+    if(home_hold_control)lv_obj_set_y(home_hold_control,dock_top-82);
+    chat_history_set_view_bounds(y+status.y+16,dock_top-94);
+    busy=false;
+}
+static void home_header_changed(lv_event_t *event)
+{
+    (void)event;home_reading_layout();
 }
 
 static void apply_subtitle_font(void)
@@ -629,7 +658,8 @@ static void apply_subtitle_font(void)
     if (user_text_label) lv_obj_set_style_text_font(user_text_label, font, LV_PART_MAIN);
     if (agent_text_label) lv_obj_set_style_text_font(agent_text_label, font, LV_PART_MAIN);
     if (size != 0) {
-        apply_global_font_tree(home_ui_screen, font);
+        apply_global_font_tree(home_ui_screen, settings_cached_font(font));
+        apply_global_font_tree(menu_screen, settings_cached_font(font));
         apply_global_font_tree(settings_screen, settings_cached_font(font));
     }
     /* Apply chat's cached font after the global walk, which binds SD sources. */
@@ -642,18 +672,25 @@ static void apply_subtitle_font(void)
         lv_obj_set_style_text_font(list, settings_font, LV_PART_MAIN);
         apply_global_font_tree(list, settings_font);
     }
+    const lv_font_t *menu_heading = settings_cached_font(font);
 #if CONFIG_P4_ASR_MODE
     /* The product title keeps its heading size independently of global text. */
     const lv_font_t *title_font = speech_to_text_mode_cached_font28();
     if (home_title_label && title_font)
         lv_obj_set_style_text_font(home_title_label, title_font, LV_PART_MAIN);
-    if (title_font) text_entry_set_font(home_ui_screen, title_font);
+    if (title_font) {
+        text_entry_set_font(home_ui_screen, title_font);
+        menu_heading = title_font;
+    }
 #endif
+    qh_home_set_fonts(&menu_home, settings_cached_font(font), menu_heading);
+    settings_relayout();
+    home_reading_layout();
 }
 
 static void refresh_ui_font_from_sdcard(void)
 {
-    const lv_font_t *font = project_ui_font();
+    const lv_font_t *font = settings_cached_font(project_ui_font());
     for (size_t index = 0; index < font_target_count; ++index) {
         lv_obj_set_style_text_font(font_targets[index], font, LV_PART_MAIN);
     }
@@ -1870,9 +1907,8 @@ static bool submit_home_text(const char *text, void *context)
 static void home_input_layout(int height, void *context)
 {
     (void)context;
-    const int limit = UI_HEIGHT - UI_MARGIN - height;
-    const int top = UI_HOME_INPUT_TOP < limit ? UI_HOME_INPUT_TOP : limit;
-    chat_history_set_view_height(top - 20 - UI_CHAT_TOP);
+    home_input_height=height;
+    home_reading_layout();
 }
 
 static void open_home_text(lv_event_t *event)
@@ -2006,6 +2042,10 @@ static void resume_voice_after_sign_language(void)
         }
     }
     ESP_LOGI(TAG, "mode: voice home resumed; retained_session=%d", (int)session_retained);
+    if (settings_after_camera) {
+        settings_after_camera = false;
+        settings_button_callback(NULL);
+    }
 }
 #endif
 
@@ -2085,16 +2125,7 @@ static void speech_to_text_button_callback(lv_event_t *event)
 static void style_home_button(lv_obj_t *object, uint32_t color)
 {
     lv_obj_remove_style_all(object);
-    lv_obj_set_style_bg_color(object, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(object, LV_OPA_90, LV_PART_MAIN);
-    lv_obj_set_style_radius(object, 12, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(object, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(object, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(object, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(object, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(object, lv_color_darken(lv_color_hex(color), LV_OPA_20),
-                              LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_set_scrollable(object, false);
+    qh_button(object, color);
 }
 
 /* Settings navigation only: retain the home objects and the current voice
@@ -2103,7 +2134,7 @@ static lv_obj_t *settings_label(lv_obj_t *parent, const char *text, uint32_t col
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_obj_set_style_text_font(label, settings_cached_font(project_ui_font()), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, qh_color(color), LV_PART_MAIN);
     lv_label_set_text(label, text);
     return label;
 }
@@ -2116,6 +2147,7 @@ static uint8_t settings_saved_subtitle_size;
 static bool settings_have_saved_subtitle_size;
 static unsigned settings_saved_timeout;
 static bool settings_have_saved_timeout;
+static bool settings_saved_dark, settings_have_saved_dark;
 
 static void settings_save_task(void *argument)
 {
@@ -2131,21 +2163,25 @@ static void settings_save_task(void *argument)
                                     (uint8_t)atomic_load(&settings_volume_applied)};
         const uint8_t subtitle_size = atomic_load(&settings_subtitle_size);
         const unsigned timeout = screen_idle_get_timeout();
+        const bool dark=qh_theme_dark();
         if (settings_have_saved_values && memcmp(values, settings_saved_values, sizeof(values)) == 0 &&
             settings_have_saved_subtitle_size && subtitle_size == settings_saved_subtitle_size &&
-            settings_have_saved_timeout && timeout == settings_saved_timeout) {
+            settings_have_saved_timeout && timeout == settings_saved_timeout &&
+            settings_have_saved_dark && dark == settings_saved_dark) {
             if (uxQueueMessagesWaiting(settings_save_queue) == 0) atomic_store(&settings_save_status, 2);
             continue;
         }
         esp_err_t error = nvs_set_blob(settings_nvs, "av_v1", values, sizeof(values));
         if (error == ESP_OK) error = nvs_set_u8(settings_nvs, "ui_font_v1", subtitle_size);
         if (error == ESP_OK) error = nvs_set_u16(settings_nvs, "sleep_s_v1", timeout);
+        if (error == ESP_OK) error = nvs_set_u8(settings_nvs,"ui_dark_v1",dark?1:0);
         if (error == ESP_OK) error = nvs_commit(settings_nvs);
         if (error == ESP_OK) {
             memcpy(settings_saved_values, values, sizeof(values));
             settings_have_saved_values = true;
             settings_saved_subtitle_size = subtitle_size;
             settings_have_saved_subtitle_size = true;
+            settings_saved_dark=dark;settings_have_saved_dark=true;
             settings_saved_timeout = timeout;
             settings_have_saved_timeout = true;
             if (uxQueueMessagesWaiting(settings_save_queue) == 0) atomic_store(&settings_save_status, 2);
@@ -2164,8 +2200,22 @@ static void settings_schedule_save(void)
     xQueueOverwrite(settings_save_queue, &notification);
 }
 
+static void settings_restore_theme(void)
+{
+    qh_theme_restore(false);
+    settings_have_saved_dark=false;
+    uint8_t dark=0;
+    esp_err_t error=nvs_get_u8(settings_nvs,"ui_dark_v1",&dark);
+    if(error==ESP_OK && dark<=1){
+        qh_theme_restore(dark!=0);settings_saved_dark=dark!=0;settings_have_saved_dark=true;
+    }
+    ESP_LOGI(TAG,"ui_theme dark=%d restored=%d",qh_theme_dark(),settings_have_saved_dark);
+}
+
 static void settings_storage_start(void)
 {
+    qh_theme_restore(false);
+    qh_theme_set_save_callback(settings_schedule_save);
     /* Do not erase NVS on a settings error. Keep default runtime controls;
      * the existing Wi-Fi initialization/recovery path remains unchanged. */
     esp_err_t error = nvs_flash_init();
@@ -2175,6 +2225,7 @@ static void settings_storage_start(void)
         ESP_LOGW(TAG, "settings: storage init error=%d", (int)error);
         return;
     }
+    settings_restore_theme();
     uint8_t values[3];
     size_t length = sizeof(values);
     error = nvs_get_blob(settings_nvs, "av_v1", values, &length);
@@ -2241,7 +2292,7 @@ static void settings_return_callback(lv_event_t *event)
         return;
     }
     if (settings_home_screen != NULL) {
-        lv_screen_load(settings_home_screen);
+        qh_screen_load(settings_home_screen, true);
     }
 }
 
@@ -2269,9 +2320,9 @@ static lv_obj_t *settings_slider(lv_obj_t *row, int minimum, int value,
     lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, -28);
     lv_slider_set_range(slider, minimum, 100);
     lv_slider_set_value(slider, value, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x385575), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x4CB9FF), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
+    lv_obj_set_style_bg_color(slider, qh_color(QH_LINE), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, qh_color(QH_ACCENT), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, qh_color(QH_INK), LV_PART_KNOB);
     lv_obj_set_style_pad_all(slider, 10, LV_PART_KNOB);
     lv_obj_set_ext_click_area(slider, 18);
     lv_obj_add_event_cb(slider, callback, LV_EVENT_VALUE_CHANGED, NULL);
@@ -2312,13 +2363,19 @@ static void settings_volume_release_callback(lv_event_t *event)
     }
 }
 
+static void settings_value_text(lv_obj_t *label,const char *text)
+{
+    if(label && strcmp(lv_label_get_text(label),text))lv_label_set_text(label,text);
+}
+
 static void settings_volume_refresh(lv_timer_t *timer)
 {
     (void)timer;
     if (lv_screen_active() != settings_screen) return;
-    if (settings_history_value)
-        lv_label_set_text_fmt(settings_history_value, "%u条 %s", chat_history_count(),
-                              chat_history_storage_status());
+    if (settings_history_value) {
+        char text[64];snprintf(text,sizeof(text),"%u条 %s",chat_history_count(),chat_history_storage_status());
+        settings_value_text(settings_history_value,text);
+    }
     int test_status = atomic_load(&settings_test_status);
     /* Existing microphone/recovery handoffs may reset the PCM queue and
      * discard a queued command. Allow the next volume adjustment to notify. */
@@ -2332,7 +2389,7 @@ static void settings_volume_refresh(lv_timer_t *timer)
             (test_status == 3 || test_status == 4 || test_status == 6 ||
              (xEventGroupGetBits(audio_event_group) & AUDIO_PLAYBACK_IDLE_BIT) != 0)) {
             settings_return_pending = false;
-            lv_screen_load(settings_home_screen);
+            qh_screen_load(settings_home_screen, true);
         }
         return;
     }
@@ -2347,15 +2404,44 @@ static void settings_volume_refresh(lv_timer_t *timer)
         lv_label_set_text(settings_save_label, save_text);
     }
     const int requested = atomic_load(&settings_volume_requested);
+    char volume_text[32];
     if (atomic_load(&settings_volume_error) != 0) {
         lv_slider_set_value(settings_volume_slider, requested, LV_ANIM_OFF);
-        lv_label_set_text(settings_volume_value, "调节失败");
+        snprintf(volume_text,sizeof(volume_text),"调节失败");
     } else if (requested != atomic_load(&settings_volume_applied)) {
-        lv_label_set_text_fmt(settings_volume_value, "%d%%...", requested);
+        snprintf(volume_text,sizeof(volume_text),"%d%%...",requested);
     } else if (requested == 0) {
-        lv_label_set_text(settings_volume_value, "静音");
+        snprintf(volume_text,sizeof(volume_text),"静音");
     } else {
-        lv_label_set_text_fmt(settings_volume_value, "%d%%", requested);
+        snprintf(volume_text,sizeof(volume_text),"%d%%",requested);
+    }
+    settings_value_text(settings_volume_value,volume_text);
+}
+
+static void settings_relayout(void)
+{
+    const lv_font_t *font=settings_cached_font(project_ui_font());
+    const int line=font->line_height;
+    const int hit=line+12>56?line+12:56;
+    for(unsigned i=0;i<8;++i){
+        lv_obj_t *row=settings_rows[i];if(!row)continue;
+        int height=hit+16;
+        if(i==1 || i==2)height=line+UI_SETTINGS_SLIDER_EXTRA;
+        if(i==3)height=line+hit+UI_SETTINGS_CHOICE_EXTRA;
+        if(i==4)height=line+UI_SETTINGS_HISTORY_EXTRA;
+        lv_obj_set_height(row,height);
+        lv_obj_t *name=lv_obj_get_child(row,0),*value=lv_obj_get_child(row,1);
+        lv_obj_set_width(name,246);
+        if(i==1 || i==2 || i==3 || i==4){
+            lv_obj_align(name,LV_ALIGN_TOP_LEFT,20,10);
+            if(i!=4)lv_obj_align(value,LV_ALIGN_TOP_RIGHT,-20,10);
+        }
+        for(uint32_t c=2;c<lv_obj_get_child_count(row);++c){
+            lv_obj_t *control=lv_obj_get_child(row,c);
+            if(lv_obj_check_type(control,&lv_slider_class)) {
+                lv_obj_align(control,LV_ALIGN_BOTTOM_MID,0,-26);
+            } else lv_obj_set_height(control,hit);
+        }
     }
 }
 
@@ -2366,7 +2452,9 @@ static void settings_subtitle_refresh(void)
     for (unsigned i = 0; i < 2; ++i) {
         const bool selected = size == (i == 0 ? 14 : 28);
         lv_obj_set_style_bg_color(settings_subtitle_buttons[i],
-            lv_color_hex(selected ? 0x1D72D8 : 0x385575), LV_PART_MAIN);
+            qh_color(selected ? QH_SOFT : QH_SURFACE), LV_PART_MAIN);
+        lv_obj_set_style_border_width(settings_subtitle_buttons[i],selected?2:1,0);
+        lv_obj_set_style_border_color(settings_subtitle_buttons[i],qh_color(selected?QH_LINK:QH_LINE),0);
     }
 }
 
@@ -2404,20 +2492,30 @@ static void settings_clear_history(lv_event_t *event)
     (void)event;
     if (settings_clear_dialog) return;
     settings_clear_dialog = lv_obj_create(settings_screen);
-    lv_obj_set_size(settings_clear_dialog, 540, 260);
-    lv_obj_center(settings_clear_dialog);
-    lv_obj_set_style_bg_color(settings_clear_dialog, lv_color_hex(0x254D7A), 0);
+    lv_obj_remove_style_all(settings_clear_dialog);
+    lv_obj_set_size(settings_clear_dialog, UI_WIDTH, UI_HEIGHT);
     lv_obj_set_scrollable(settings_clear_dialog, false);
-    lv_obj_t *prompt = settings_label(settings_clear_dialog, "清除全部对话历史？清除后无法恢复。", 0xFFFFFF);
-    lv_obj_set_width(prompt, 480);
-    lv_label_set_long_mode(prompt, LV_LABEL_LONG_WRAP);
-    lv_obj_align(prompt, LV_ALIGN_TOP_MID, 0, 20);
+    lv_obj_set_style_bg_color(settings_clear_dialog, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(settings_clear_dialog, LV_OPA_50, 0);
+    const lv_font_t *font = settings_cached_font(project_ui_font());
+    const char *message = "清除全部对话历史？清除后无法恢复。";
+    lv_point_t measured; lv_text_get_size(&measured, message, font, 0, 4, 480, LV_TEXT_FLAG_NONE);
+    const int action_height = font->line_height + 16 > 70 ? font->line_height + 16 : 70;
+    lv_obj_t *card = lv_obj_create(settings_clear_dialog);
+    qh_panel(card, QH_SURFACE, 28); lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_set_scrollable(card, false);
+    lv_obj_set_size(card, 540, measured.y + action_height + 90); lv_obj_center(card);
+    qh_reveal(card);
+    lv_obj_t *prompt = settings_label(card, message, QH_INK);
+    lv_obj_set_width(prompt, 480); lv_label_set_long_mode(prompt, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(prompt, 4, 0);
+    lv_obj_align(prompt, LV_ALIGN_TOP_MID, 0, 24);
     for (unsigned i = 0; i < 2; ++i) {
-        lv_obj_t *button = lv_button_create(settings_clear_dialog);
-        style_home_button(button, i == 0 ? 0x1D72D8 : 0xC94F55);
-        lv_obj_set_size(button, 160, 52);
-        lv_obj_align(button, LV_ALIGN_BOTTOM_MID, i == 0 ? -100 : 100, -12);
-        lv_obj_t *label = settings_label(button, i == 0 ? "取消" : "确认清除", 0xFFFFFF);
+        lv_obj_t *button = lv_button_create(card);
+        qh_button(button, i == 0 ? QH_SOFT : QH_DANGER);
+        lv_obj_set_size(button, 220, action_height);
+        lv_obj_align(button, LV_ALIGN_BOTTOM_MID, i == 0 ? -122 : 122, -24);
+        lv_obj_t *label = settings_label(button, i == 0 ? "取消" : "确认清除", i == 0 ? QH_INK : QH_ON_ACCENT);
         lv_obj_center(label);
         lv_obj_add_event_cb(button, i == 0 ? settings_clear_cancel : settings_clear_confirm,
                             LV_EVENT_CLICKED, NULL);
@@ -2447,78 +2545,128 @@ static void settings_wifi_callback(lv_event_t *event)
     wifi_settings_show(settings_screen, project_ui_font());
 }
 
+static lv_obj_t *help_screen, *help_parent_screen;
+static void help_back(lv_event_t *event) { (void)event; qh_screen_load(help_parent_screen, true); }
+static void settings_help_callback(lv_event_t *event)
+{
+    (void)event;
+    help_parent_screen = lv_screen_active();
+    if (!help_screen) {
+        help_screen=lv_obj_create(NULL); qh_screen(help_screen);
+        const lv_font_t *font=settings_cached_font(project_ui_font());
+        qh_header(help_screen,"使用帮助",font,help_back,true);
+        lv_obj_t *intro=qh_label(help_screen,font,"按你的方式交流，随时返回",QH_MUTED);
+        lv_obj_set_pos(intro,24,86);lv_obj_set_width(intro,552);
+        lv_obj_t *list=lv_obj_create(help_screen);lv_obj_remove_style_all(list);
+        lv_obj_set_pos(list,20,150);lv_obj_set_size(list,560,850);
+        lv_obj_set_flex_flow(list,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_row(list,12,0);
+        lv_obj_set_scroll_dir(list,LV_DIR_VER);
+        const char *titles[]={"语音对话","独立转写","键盘输入","相机预览","息屏唤醒"};
+        const char *actions[]={"按住说话，松开发送","上翻阅读，回到最新","点击键盘，拼/E切换","进入预览，返回退出","首次唤醒，再次操作"};
+        const char *steps[]={
+            "1. 按住下方按钮说话，松开后等待回复。\n2. 回复时按住可打断并继续说话。",
+            "1. 按住说话，松开后保留文字。\n2. 上翻保留位置；清空前需确认。\n3. 录音结束后再返回或进入设置。",
+            "1. 候选可横向滑动、翻页。\n2. USB键盘可直接输入，不自动展开软键盘。\n3. 提交失败时保留草稿。",
+            "1. 当前提供取景预览。\n2. 点击返回退出，识别模型尚未接入。",
+            "1. 首次触摸或按键只唤醒屏幕。\n2. 再次操作即可继续使用。"};
+        const unsigned icons[]={QH_ICON_ROBOT,QH_ICON_DOCUMENT,QH_ICON_KEYBOARD,QH_ICON_CAMERA,QH_ICON_WAKE};
+        for(unsigned i=0;i<5;++i){
+            lv_obj_t *card=lv_obj_create(list);qh_panel(card,QH_SURFACE,20);
+            lv_obj_set_size(card,552,LV_SIZE_CONTENT);lv_obj_set_scrollable(card,false);
+            lv_obj_set_style_pad_all(card,16,0);lv_obj_set_style_pad_row(card,8,0);
+            lv_obj_set_flex_flow(card,LV_FLEX_FLOW_COLUMN);
+            lv_obj_t *row=lv_obj_create(card);lv_obj_remove_style_all(row);
+            lv_obj_set_size(row,520,LV_SIZE_CONTENT);lv_obj_set_flex_flow(row,LV_FLEX_FLOW_ROW);
+            lv_obj_set_style_pad_column(row,12,0);lv_obj_set_scrollable(row,false);
+            qh_icon(row,icons[i]);
+            qh_label(row,font,titles[i],QH_INK);
+            lv_obj_t *label=qh_label(card,font,actions[i],QH_LINK);
+            lv_obj_set_width(label,520);lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+            label=qh_label(card,font,steps[i],QH_INK);
+            lv_obj_set_width(label,520);lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_line_space(label,4,0);
+        }
+    }
+    apply_global_font_tree(help_screen,settings_cached_font(project_ui_font()));
+    qh_screen_load(help_screen,false);
+}
+
 static void settings_button_callback(lv_event_t *event)
 {
     (void)event;
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+    if (sign_language_mode_active()) {
+        settings_after_camera = true;
+        sign_language_mode_request_return();
+        return;
+    }
+#endif
     if (conversation_recording || conversation_finish_requested || local_loop_active) {
         lv_label_set_text(status_label, "请等待录音结束，再进入设置");
         return;
     }
+#if CONFIG_P4_ASR_MODE
+    if (speech_to_text_mode_active() && !speech_to_text_mode_can_settings()) return;
+#endif
+    if (qh_navigation_busy() && event != NULL) return;
     settings_home_screen = lv_screen_active();
     if (settings_screen == NULL) {
-        settings_screen = lv_obj_create(NULL);
-        lv_obj_set_style_bg_color(settings_screen, lv_color_hex(0x10233F), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(settings_screen, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_scrollable(settings_screen, false);
-
-        lv_obj_t *title = settings_label(settings_screen, "设置", 0xFFFFFF);
-#if CONFIG_P4_ASR_MODE
-        const lv_font_t *title_font = speech_to_text_mode_font28();
-        if (title_font != NULL && atomic_load(&settings_subtitle_size) == 0) {
-            lv_obj_set_style_text_font(title, settings_cached_font(title_font), LV_PART_MAIN);
-        }
+        settings_screen = lv_obj_create(NULL);qh_screen(settings_screen);
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+        portrait_observe_screen(settings_screen,2);
 #endif
-        lv_obj_align(title, LV_ALIGN_TOP_RIGHT, -32, 36);
-        lv_obj_t *back = lv_button_create(settings_screen);
-        style_home_button(back, 0x1D72D8);
-        lv_obj_set_size(back, 160, 52);
-        lv_obj_align(back, LV_ALIGN_TOP_LEFT, 32, 30);
-        lv_obj_t *back_label = settings_label(back, "返回首页", 0xFFFFFF);
-        lv_obj_center(back_label);
-        lv_obj_add_event_cb(back, settings_return_callback, LV_EVENT_CLICKED, NULL);
+        qh_header(settings_screen,"设置",settings_cached_font(project_ui_font()),settings_return_callback,false);
 
         lv_obj_t *list = lv_obj_create(settings_screen);
         lv_obj_remove_style_all(list);
-        lv_obj_set_size(list, UI_CONTENT_WIDTH, 836);
-        lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 110);
+        lv_obj_set_size(list, UI_CONTENT_WIDTH, UI_SETTINGS_HEIGHT);
+        lv_obj_align(list, LV_ALIGN_TOP_MID, 0, UI_SETTINGS_TOP);
         lv_obj_set_style_pad_row(list, 8, 0);
         lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_scroll_dir(list, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
         lv_obj_set_scroll_elastic(list, false);
-        const char *names[] = {"Wi-Fi", "屏幕亮度", "扬声器音量", "全局字号", "对话历史", "自动息屏", "关于设备"};
-        for (unsigned index = 0; index < 7; ++index) {
+        const char *names[] = {"Wi-Fi", "屏幕亮度", "扬声器音量", "全局字号", "对话历史", "自动息屏", "关于设备", "使用帮助"};
+        for (unsigned index = 0; index < 8; ++index) {
+            if (index==0 || index==1 || index==3 || index==5) {
+                const char *group=index==0?"连接":index==1?"屏幕与声音":index==3?"文字与会话":"设备";
+                lv_obj_t *heading=settings_label(list,group,QH_MUTED);
+                lv_obj_set_width(heading,UI_CONTENT_WIDTH-28);
+            }
             lv_obj_t *row = lv_obj_create(list);
+            settings_rows[index]=row;
             lv_obj_remove_style_all(row);
             lv_obj_set_size(row, UI_CONTENT_WIDTH - 12, 104);
-            lv_obj_set_style_bg_color(row, lv_color_hex(0x1C3554), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(row, qh_color(QH_SURFACE), LV_PART_MAIN);
             lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_radius(row, 12, LV_PART_MAIN);
+            lv_obj_set_style_radius(row, 20, LV_PART_MAIN);
+            lv_obj_set_style_border_width(row,1,0);
+            lv_obj_set_style_border_color(row,qh_color(QH_LINE),0);
             lv_obj_set_clickable(row, false);
             lv_obj_set_scrollable(row, false);
-            lv_obj_t *name = settings_label(row, names[index], 0xFFFFFF);
+            lv_obj_t *name = settings_label(row, names[index], QH_INK);
             lv_obj_align(name, LV_ALIGN_LEFT_MID, 28, 0);
-            lv_obj_t *availability = settings_label(row, "暂不可用", 0x9FB5CE);
+            lv_obj_t *availability = settings_label(row, "暂不可用", QH_MUTED);
             lv_obj_align(availability, LV_ALIGN_RIGHT_MID, -28, 0);
             if (index == 0) {
                 lv_obj_set_hidden(availability, true);
                 lv_obj_t *button = lv_button_create(row);
-                style_home_button(button, 0x1D72D8);
-                lv_obj_set_size(button, 180, 52);
+                style_home_button(button, QH_SOFT);
+                lv_obj_set_size(button, 180, 70);
                 lv_obj_align(button, LV_ALIGN_RIGHT_MID, -28, 0);
-                lv_obj_t *label = settings_label(button, "管理网络", 0xFFFFFF);
+                lv_obj_t *label = settings_label(button, "管理网络", QH_INK);
                 lv_obj_center(label);
                 lv_obj_add_event_cb(button, settings_wifi_callback, LV_EVENT_CLICKED, NULL);
             } else if (index == 1) {
-                lv_obj_set_height(row, 128);
+                lv_obj_set_height(row, 160);
                 lv_obj_align(name, LV_ALIGN_TOP_LEFT, 24, 16);
                 lv_obj_align(availability, LV_ALIGN_TOP_RIGHT, -24, 16);
                 settings_brightness_value = availability;
                 lv_label_set_text_fmt(availability, "%d%%", settings_brightness);
                 settings_slider(row, 10, settings_brightness, settings_brightness_callback);
             } else if (index == 2) {
-                lv_obj_set_height(row, 128);
+                lv_obj_set_height(row, 160);
                 lv_obj_align(name, LV_ALIGN_TOP_LEFT, 24, 16);
                 lv_obj_align(availability, LV_ALIGN_TOP_RIGHT, -24, 16);
                 settings_volume_value = availability;
@@ -2528,17 +2676,17 @@ static void settings_button_callback(lv_event_t *event)
                 lv_obj_add_event_cb(settings_volume_slider, settings_volume_release_callback,
                                     LV_EVENT_RELEASED, NULL);
             } else if (index == 3) {
-                lv_obj_set_height(row, 144);
+                lv_obj_set_height(row, 190);
                 lv_obj_align(name, LV_ALIGN_TOP_LEFT, 24, 12);
                 lv_obj_align(availability, LV_ALIGN_TOP_RIGHT, -24, 12);
                 settings_subtitle_value = availability;
                 for (unsigned i = 0; i < 2; ++i) {
                     lv_obj_t *choice = lv_button_create(row);
                     settings_subtitle_buttons[i] = choice;
-                    style_home_button(choice, 0x385575);
-                    lv_obj_set_size(choice, 180, 52);
+                    style_home_button(choice, QH_LINE);
+                    lv_obj_set_size(choice, 180, 70);
                     lv_obj_align(choice, LV_ALIGN_BOTTOM_MID, i == 0 ? -110 : 110, -16);
-                    lv_obj_t *label = settings_label(choice, i == 0 ? "小字" : "大字", 0xFFFFFF);
+                    lv_obj_t *label = settings_label(choice, i == 0 ? "14px" : "28px", QH_INK);
                     lv_obj_center(label);
                     lv_obj_add_event_cb(choice, settings_subtitle_callback, LV_EVENT_CLICKED,
                                         (void *)(intptr_t)(i == 0 ? 14 : 28));
@@ -2548,7 +2696,8 @@ static void settings_button_callback(lv_event_t *event)
                 lv_obj_set_hidden(availability, true);
                 lv_obj_t *dropdown = lv_dropdown_create(row);
                 settings_timeout_dropdown = dropdown;
-                lv_obj_set_size(dropdown, 250, 56);
+                lv_obj_set_size(dropdown, 250, 70);
+                lv_obj_set_style_pad_ver(dropdown, 0, 0);
                 lv_obj_align(dropdown, LV_ALIGN_RIGHT_MID, -28, 0);
                 lv_dropdown_set_options(dropdown, "永不\n30秒\n1分钟\n2分钟\n5分钟");
                 for (unsigned i = 0; i < sizeof(screen_timeout_choices) / sizeof(screen_timeout_choices[0]); ++i)
@@ -2556,26 +2705,32 @@ static void settings_button_callback(lv_event_t *event)
                 const lv_font_t *font = settings_cached_font(project_ui_font());
                 lv_obj_set_style_text_font(dropdown, font, 0);
                 lv_obj_set_style_text_font(dropdown, LV_FONT_DEFAULT, LV_PART_INDICATOR);
-                lv_obj_set_style_bg_color(dropdown, lv_color_hex(0x254D7A), 0);
-                lv_obj_set_style_text_color(dropdown, lv_color_white(), 0);
+                lv_obj_set_style_bg_color(dropdown, qh_color(QH_SOFT), 0);
+                lv_obj_set_style_text_color(dropdown, qh_color(QH_INK), 0);
                 lv_obj_t *options = lv_dropdown_get_list(dropdown);
                 lv_obj_set_style_text_font(options, font, 0);
-                lv_obj_set_style_bg_color(options, lv_color_hex(0x254D7A), 0);
-                lv_obj_set_style_text_color(options, lv_color_white(), 0);
-                lv_obj_set_style_bg_color(options, lv_color_hex(0x1D72D8), LV_PART_SELECTED);
-                lv_obj_set_style_text_color(options, lv_color_white(), LV_PART_SELECTED);
+                lv_obj_set_style_bg_color(options, qh_color(QH_SOFT), 0);
+                lv_obj_set_style_text_color(options, qh_color(QH_INK), 0);
+                lv_obj_set_style_bg_color(options, qh_color(QH_SOFT), LV_PART_SELECTED);
+                lv_obj_set_style_text_color(options, qh_color(QH_INK), LV_PART_SELECTED);
                 lv_obj_add_event_cb(dropdown, settings_timeout_callback, LV_EVENT_VALUE_CHANGED, NULL);
             } else if (index == 6) {
                 lv_obj_set_hidden(availability, true);
                 lv_obj_t *button = lv_button_create(row);
-                style_home_button(button, 0x1D72D8);
-                lv_obj_set_size(button, 160, 52);
+                style_home_button(button, QH_SOFT);
+                lv_obj_set_size(button, 160, 70);
                 lv_obj_align(button, LV_ALIGN_RIGHT_MID, -28, 0);
-                lv_obj_t *label = settings_label(button, "查看信息", 0xFFFFFF);
+                lv_obj_t *label = settings_label(button, "查看信息", QH_INK);
                 lv_obj_center(label);
                 lv_obj_add_event_cb(button, settings_about_callback, LV_EVENT_CLICKED, NULL);
+            } else if (index == 7) {
+                lv_obj_set_hidden(availability, true);
+                lv_obj_t *button = lv_button_create(row); qh_button(button, QH_SOFT);
+                lv_obj_set_size(button, 180, 70); lv_obj_align(button, LV_ALIGN_RIGHT_MID, -28, 0);
+                lv_obj_t *label = settings_label(button, "查看帮助", QH_INK); lv_obj_center(label);
+                lv_obj_add_event_cb(button, settings_help_callback, LV_EVENT_CLICKED, NULL);
             } else if (index == 4) {
-                lv_obj_set_height(row, 136);
+                lv_obj_set_height(row, 190);
                 lv_obj_align(name, LV_ALIGN_TOP_LEFT, 24, 12);
                 settings_history_value = availability;
                 lv_obj_set_width(availability, 290);
@@ -2583,22 +2738,23 @@ static void settings_button_callback(lv_event_t *event)
                 lv_obj_align(availability, LV_ALIGN_BOTTOM_LEFT, 24, -16);
                 lv_label_set_text(availability, "读取中");
                 lv_obj_t *clear = lv_button_create(row);
-                style_home_button(clear, 0xC94F55);
-                lv_obj_set_size(clear, 160, 52);
+                style_home_button(clear, QH_DANGER);
+                lv_obj_set_size(clear, 160, 70);
                 lv_obj_align(clear, LV_ALIGN_BOTTOM_RIGHT, -24, -16);
-                lv_obj_t *label = settings_label(clear, "清除历史", 0xFFFFFF);
+                lv_obj_t *label = settings_label(clear, "清除历史", QH_ON_ACCENT);
                 lv_obj_center(label);
                 lv_obj_add_event_cb(clear, settings_clear_history, LV_EVENT_CLICKED, NULL);
             }
         }
-        settings_save_label = settings_label(settings_screen, "调节后自动保存", 0x9FB5CE);
+        settings_save_label = settings_label(settings_screen, "调节后自动保存", QH_MUTED);
         lv_obj_align(settings_save_label, LV_ALIGN_BOTTOM_MID, 0, -18);
         lv_timer_create(settings_volume_refresh, 250, NULL);
     }
     if (!atomic_load(&settings_test_enabled)) atomic_store(&settings_test_status, 0);
     atomic_store(&settings_test_enabled, true);
     settings_volume_changed = false;
-    lv_screen_load(settings_screen);
+    settings_relayout();
+    qh_screen_load(settings_screen, false);
 }
 
 static void network_health(lv_timer_t *timer)
@@ -2613,47 +2769,67 @@ static void network_health(lv_timer_t *timer)
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 }
 
+static void menu_return(lv_event_t *event)
+{
+    (void)event;
+    if (qh_navigation_busy() || conversation_recording || conversation_finish_requested || local_loop_active) return;
+    text_entry_release(home_ui_screen);
+    qh_screen_load(menu_screen, true);
+}
+static void menu_voice(lv_event_t *event)
+{
+    (void)event;
+    if (qh_navigation_busy()) return;
+    qh_screen_load(home_ui_screen, false);
+}
+static void menu_readiness(lv_timer_t *timer)
+{
+    (void)timer;
+    if (lv_screen_active()!=menu_screen) return;
+    qh_home_set_readiness(&menu_home, wifi_link_up, cloud_connected,
+        atomic_load(&idle_welcome_started) && !atomic_load(&idle_welcome_finished) && !atomic_load(&chat_user_has_spoken));
+}
+static void create_menu_screen(void)
+{
+    qh_set_settings_callback(settings_button_callback);
+    lv_event_cb_t transcript = NULL, camera = NULL;
+#if CONFIG_P4_ASR_MODE
+    transcript = speech_to_text_button_callback;
+#endif
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+    camera = sign_language_button_callback;
+#endif
+    qh_home_create(&menu_home, project_ui_font(), project_ui_font(), menu_voice,
+        transcript, camera, settings_button_callback, settings_help_callback);
+    menu_screen = menu_home.screen;
+    apply_subtitle_font();
+    menu_readiness(NULL);
+    lv_timer_create(menu_readiness, 500, NULL);
+}
+
 static void create_diagnostics_ui(void)
 {
     lv_obj_t *screen = lv_screen_active();
     home_ui_screen = screen;
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+    portrait_observe_screen(screen,1);
+#endif
     lv_timer_create(network_health, 10000, NULL);
     lv_obj_t *title;
     lv_obj_t *subtitle;
     lv_obj_t *touch_surface;
 
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x10233F), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(screen, qh_color(QH_BG), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
-    lv_obj_t *settings_button = lv_button_create(screen);
-    style_home_button(settings_button, 0x1D72D8);
-    lv_obj_set_size(settings_button, 60, 60);
-    lv_obj_align(settings_button, LV_ALIGN_TOP_RIGHT, -20, 12);
-    lv_obj_t *settings_icon = lv_label_create(settings_button);
-    settings_icon_label = settings_icon;
-    /* Symbols belong to Montserrat, never the Chinese SD font. */
-    lv_obj_set_style_text_font(settings_icon, LV_FONT_DEFAULT, LV_PART_MAIN);
-    lv_obj_set_style_text_color(settings_icon, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_label_set_text(settings_icon, LV_SYMBOL_SETTINGS);
-    lv_obj_set_style_transform_scale_x(settings_icon, 512, LV_PART_MAIN);
-    lv_obj_set_style_transform_scale_y(settings_icon, 512, LV_PART_MAIN);
-    lv_obj_set_style_transform_pivot_x(settings_icon, LV_PCT(50), LV_PART_MAIN);
-    lv_obj_set_style_transform_pivot_y(settings_icon, LV_PCT(50), LV_PART_MAIN);
-    lv_obj_center(settings_icon);
-    lv_obj_add_event_cb(settings_button, settings_button_callback, LV_EVENT_CLICKED, NULL);
-
-    title = lv_label_create(screen);
+    title = qh_header(screen, "语音对话", project_ui_font(), menu_return, true);
     home_title_label = title;
     apply_project_font(title);
-    lv_label_set_text(title, "聋哑人智能翻译终端");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_width(title, 400);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, UI_MARGIN, 26);
 
     lv_obj_t *typing_button = lv_button_create(screen);
-    style_home_button(typing_button, 0x1D72D8);
-    lv_obj_set_size(typing_button, 60, 60);
-    lv_obj_align(typing_button, LV_ALIGN_TOP_RIGHT, -100, 12);
+    style_home_button(typing_button, QH_SOFT);
+    lv_obj_set_size(typing_button, QH_TOOL_SIZE, QH_TOOL_SIZE);
+    lv_obj_set_pos(typing_button, QH_LANGUAGE_X, QH_TOOL_Y);
     lv_obj_t *typing_icon = lv_label_create(typing_button);
     typing_icon_label = typing_icon;
     lv_obj_set_style_text_font(typing_icon, project_ui_font(), 0);
@@ -2662,10 +2838,11 @@ static void create_diagnostics_ui(void)
     lv_obj_add_event_cb(typing_button, open_home_text, LV_EVENT_CLICKED, NULL);
 
     subtitle = lv_label_create(screen);
+    home_subtitle=subtitle;
     apply_project_font(subtitle);
-    lv_label_set_text(subtitle, "按住说话，松开后发送");
+    lv_label_set_text(subtitle, "声音与文字，按你的方式");
     lv_obj_set_style_text_align(subtitle, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(subtitle, lv_color_hex(0x9FD3FF), LV_PART_MAIN);
+    lv_obj_set_style_text_color(subtitle, qh_color(QH_MUTED), LV_PART_MAIN);
     lv_obj_set_width(subtitle, UI_CONTENT_WIDTH);
     lv_obj_align(subtitle, LV_ALIGN_TOP_MID, 0, 82);
 
@@ -2673,61 +2850,36 @@ static void create_diagnostics_ui(void)
     apply_project_font(status_label);
     lv_label_set_text(status_label, "正在连接云端语音服务...");
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_size(status_label, UI_CONTENT_WIDTH, UI_STATUS_HEIGHT);
+    lv_obj_set_size(status_label, UI_CONTENT_WIDTH, LV_SIZE_CONTENT);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_color(status_label, qh_color(QH_INK), LV_PART_MAIN);
     lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, UI_STATUS_TOP);
 
     chat_history_create_ui(screen, project_ui_font());
+    lv_obj_add_event_cb(status_label,home_header_changed,LV_EVENT_SIZE_CHANGED,NULL);
+    lv_obj_add_event_cb(subtitle,home_header_changed,LV_EVENT_SIZE_CHANGED,NULL);
     apply_subtitle_font();
-
     touch_surface = lv_obj_create(screen);
     home_hold_control = touch_surface;
-    style_home_button(touch_surface, 0xD97706);
-    lv_obj_set_size(touch_surface, UI_CONTENT_WIDTH, 80);
+    style_home_button(touch_surface, QH_ACCENT);
+    lv_obj_set_size(touch_surface, UI_CONTENT_WIDTH, 70);
     lv_obj_set_pos(touch_surface, UI_MARGIN, UI_HOLD_TOP);
     lv_obj_t *button_label = lv_label_create(touch_surface);
     apply_project_font(button_label);
     lv_label_set_text(button_label, "按住说话，松开发送");
-    lv_obj_set_style_text_color(button_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_color(button_label, qh_color(QH_ON_ACCENT), LV_PART_MAIN);
     lv_obj_center(button_label);
     lv_obj_add_event_cb(touch_surface, touch_event_callback, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(touch_surface, touch_event_callback, LV_EVENT_RELEASED, NULL);
 
-    /* Camera bring-up is an explicit action.  Keeping it separate from the
-     * voice button guarantees the CSI pipeline is idle during normal calls. */
-#if CONFIG_P4_SIGN_LANGUAGE_MODE
-    lv_obj_t *camera_surface = lv_obj_create(screen);
-    home_camera_control = camera_surface;
-    style_home_button(camera_surface, 0x16A36A);
-    lv_obj_set_size(camera_surface, 270, 64);
-    lv_obj_set_pos(camera_surface, 310, UI_MODE_BUTTON_TOP);
-    camera_button_label = lv_label_create(camera_surface);
-    apply_project_font(camera_button_label);
-    lv_label_set_text(camera_button_label, "手语翻译");
-    lv_obj_set_style_text_color(camera_button_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_center(camera_button_label);
-    lv_obj_add_event_cb(camera_surface, sign_language_button_callback, LV_EVENT_CLICKED, NULL);
-#endif
-#if CONFIG_P4_ASR_MODE
-    lv_obj_t *asr_surface = lv_button_create(screen);
-    home_asr_control = asr_surface;
-    style_home_button(asr_surface, 0x1D72D8);
-    lv_obj_set_size(asr_surface, 270, 64);
-    lv_obj_set_pos(asr_surface, UI_MARGIN, UI_MODE_BUTTON_TOP);
-    lv_obj_t *asr_label = lv_label_create(asr_surface);
-    apply_project_font(asr_label);
-    lv_label_set_text(asr_label, "语音转文字");
-    lv_obj_set_style_text_color(asr_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_center(asr_label);
-    lv_obj_add_event_cb(asr_surface, speech_to_text_button_callback, LV_EVENT_CLICKED, NULL);
-#endif
     const lv_font_t *input_font = project_ui_font();
 #if CONFIG_P4_ASR_MODE
     if (speech_to_text_mode_cached_font28()) input_font = speech_to_text_mode_cached_font28();
 #endif
     text_entry_mount(screen, input_font, submit_home_text, NULL, home_input_layout, NULL,
                      UI_HOME_INPUT_TOP, typing_button);
+    create_menu_screen();
+    lv_screen_load(menu_screen);
 }
 
 static void log_memory_summary(void)
@@ -2948,12 +3100,14 @@ static void start_font_synchronization(void)
 static void startup_resource_task(void *arg)
 {
     (void)arg;
+    atomic_store(&startup_resources_started,true);
     const uint32_t started = esp_log_timestamp();
     if (atomic_load(&startup_base_loading)) try_load_sdcard_font();
     atomic_store(&startup_base_loading, false);
     atomic_store(&startup_base_done, true);
 #if CONFIG_P4_ASR_MODE
     const esp_err_t error = speech_to_text_mode_preload_fonts();
+    atomic_store(&startup_font_error,error);
     if (error == ESP_OK && bsp_display_lock(0)) {
         /* Reuse the fully published V2 14px index for homepage punctuation.
          * The original SD font remains intact as a fallback; this borrowed
@@ -2982,9 +3136,14 @@ static void startup_resource_task(void *arg)
 
 /* Weighted completed stages, not bytes downloaded or a time-based estimate.
  * Timer does no SD/network I/O; timeout never pretends resources are complete. */
+static void startup_set_label(const char *text)
+{
+    if(strcmp(lv_label_get_text(startup_label),text))lv_label_set_text(startup_label,text);
+}
 static void startup_status_timer(lv_timer_t *timer)
 {
     if (startup_overlay == NULL) {
+        if (qh_navigation_busy()) return;
         /* One timer interval after removal lets LVGL present the homepage. */
         atomic_store(&startup_home_visible, true);
         ESP_LOGI(TAG, "startup_home_visible=1; cloud_welcome_allowed=1");
@@ -2992,51 +3151,57 @@ static void startup_status_timer(lv_timer_t *timer)
         return;
     }
     const uint32_t elapsed = lv_tick_get() - startup_started;
+    /* Local low-frequency loop; resource flags decide when to leave. */
+    if (startup_leaf) qh_startup_leaf_step(startup_leaf, elapsed);
     const bool fonts_done = atomic_load(&startup_fonts_done);
     const bool network_prepared = atomic_load(&startup_network_prepared);
     bool fonts_ready = true;
     unsigned font_stage = 0;
-    unsigned font_percent = 0;
+    bool font_failed=false;
 #if CONFIG_P4_ASR_MODE
     fonts_ready = speech_to_text_mode_fonts_ready();
     font_stage = speech_to_text_mode_fonts_stage();
-    font_percent = speech_to_text_mode_fonts_percent();
+    font_failed=font_stage==SPEECH_FONTS_FAILED;
 #endif
-    unsigned percent = 5; /* Display and startup UI created. */
-    if (atomic_load(&startup_audio_ready)) percent += 15;
-    if (atomic_load(&startup_base_done)) percent += 15;
-    if (wifi_link_up) percent += 15;
-    if (network_prepared) percent += 10;
-#if CONFIG_P4_ASR_MODE
-    if (fonts_ready) percent += 40;
-    else if (font_stage == SPEECH_FONTS_SMALL) percent += font_percent * 15 / 100;
-    else if (font_stage == SPEECH_FONTS_LARGE) percent += 15 + font_percent * 24 / 100;
-#else
-    percent += 40;
-#endif
-    if (percent < startup_last_percent) percent = startup_last_percent;
-    if (percent != startup_last_percent || elapsed - startup_last_diagnostic >= 5000) {
-        ESP_LOGI(TAG, "startup_progress elapsed_ms=%u percent=%u stage=%u font_percent=%u fonts_done=%d",
-                 (unsigned)elapsed, percent, font_stage, font_percent, fonts_done);
-        startup_last_diagnostic = elapsed;
+    /* Independent task states; completion order is intentionally not forced. */
+    const int pinyin=pinyin_service_state();
+    const bool failed=atomic_load(&startup_resources_failed);
+    const unsigned stage[3]={
+        failed || atomic_load(&startup_font_error) || font_failed ? 3 :
+            fonts_ready ? 2 : atomic_load(&startup_resources_started) ? 1 : 0,
+        failed || pinyin==PINYIN_FAILED ? 3 : pinyin==PINYIN_READY ? 2 : pinyin==PINYIN_LOADING ? 1 : 0,
+        wifi_link_up && network_prepared ? 2 : elapsed>=20000 ? 3 : 1};
+    const unsigned mask=stage[0] | (stage[1]<<2) | (stage[2]<<4);
+    if(mask!=startup_last_mask){
+        const char *names[]={"字库","输入法","联网"};
+        const char *states[]={"等待","准备中","完成","失败"};
+        for(unsigned i=0;i<3;++i){
+            char text[64];
+            const char *value=i==2 && stage[i]==3 ? (wifi_link_up?"未就绪":"离线") : states[stage[i]];
+            snprintf(text,sizeof(text),"%s\n%s",names[i],value);
+            lv_label_set_text(startup_stage_labels[i],text);
+            const uint32_t color=stage[i]==2?QH_ACCENT:stage[i]==3?QH_DANGER:stage[i]==1?QH_MUTED:QH_LINE;
+            lv_obj_set_style_bg_color(startup_stages[i],qh_color(color),0);
+            lv_obj_set_style_text_color(startup_stage_labels[i],qh_color(stage[i]==3?QH_ERROR:QH_INK),0);
+        }
+        startup_last_mask=mask;
     }
-    startup_last_percent = percent;
-    lv_bar_set_value(startup_bar, (int)percent, LV_ANIM_ON);
-    char percentage[16];
-    snprintf(percentage, sizeof(percentage), "%u%%", percent);
-    lv_label_set_text(startup_percent_label, percentage);
+    if(elapsed-startup_last_diagnostic>=5000){
+        ESP_LOGI(TAG,"startup_states fonts=%u pinyin=%u network=%u elapsed_ms=%u",
+            stage[0],stage[1],stage[2],elapsed);startup_last_diagnostic=elapsed;
+    }
     const bool preparation_ended = fonts_done &&
         ((wifi_link_up && network_prepared) || elapsed >= 20000);
     const bool abnormal_timeout = elapsed >= 60000;
     if (startup_finishing) {
         /* Switch away before deleting the active startup screen. The original
          * homepage stays alive, with its prepared font bindings and callbacks. */
-        lv_screen_load(startup_home_screen);
+        qh_screen_load(startup_home_screen, false);
         lv_timer_set_period(lv_display_get_refr_timer(lv_display_get_default()), LV_DEF_REFR_PERIOD);
         startup_home_screen = NULL;
         lv_obj_delete(startup_overlay);
         startup_overlay = startup_label = NULL;
-        startup_bar = startup_percent_label = NULL;
+        startup_leaf = NULL;
         ESP_LOGI(TAG, "startup_home duration_ms=%" PRIu32 " fonts_done=%d cloud_ready=%d",
                  elapsed, fonts_done, (int)cloud_connected);
         return;
@@ -3045,10 +3210,11 @@ static void startup_status_timer(lv_timer_t *timer)
         /* Present the real completion/fallback value for one UI interval.
          * Do not jump away mid-font at the previous unconditional 20s limit. */
         startup_finishing = true;
-        lv_label_set_text(startup_label, abnormal_timeout ?
+        startup_set_label( abnormal_timeout ?
             "准备超时，未完成资源将继续后台加载" :
-            fonts_ready && wifi_link_up && network_prepared ? "资源准备完成，正在进入首页..." :
-                                                              "字库未就绪，暂用基础字库");
+            !fonts_ready ? "字库未就绪，暂用基础字库" :
+            !wifi_link_up || !network_prepared ? "联网未就绪，进入首页后可继续操作" :
+            "资源准备完成，正在进入首页...");
         return;
     }
     const char *font_status = !atomic_load(&startup_base_done) ? "正在加载首页字库..." :
@@ -3056,7 +3222,8 @@ static void startup_status_timer(lv_timer_t *timer)
         font_stage == 1 ? "正在校验14和28字号字库..." :
         font_stage == 3 ? "已加载14字号字库，正在加载28字号字库..." :
                          "正在加载14字号字库...";
-    lv_label_set_text(startup_label, !fonts_done ? font_status :
+    startup_set_label( stage[0]==3 ? "字库准备失败，基础界面仍可使用" :
+        stage[1]==3 ? "输入法准备失败，可使用英文输入" : !fonts_done ? font_status :
         !fonts_ready ? "字库未就绪，暂用基础字库" :
         !wifi_link_up || !network_prepared ? "已加载字库，正在联网获取资源..." :
                                              "资源准备完成，正在进入首页...");
@@ -3064,62 +3231,34 @@ static void startup_status_timer(lv_timer_t *timer)
 
 static void create_startup_placeholder(void)
 {
-    /* Leave lock-free intervals for SD font parsing between synchronized GIF
-     * frames. Normal UI refresh resumes when the startup screen is removed. */
     lv_timer_set_period(lv_display_get_refr_timer(lv_display_get_default()), 80);
     startup_started = lv_tick_get();
     startup_home_screen = lv_screen_active();
-    /* A top-layer overlay still redraws the covered active homepage on every
-     * GIF invalidation. Once its SD font is bound, those invisible glyph reads
-     * hold the display lock and starve the font-preparation task. An independent
-     * active startup screen renders only the GIF and built-in status font. */
-    startup_overlay = lv_obj_create(NULL);
-    lv_obj_set_size(startup_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_scrollable(startup_overlay, false);
-    lv_obj_set_style_bg_color(startup_overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(startup_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(startup_overlay, 0, 0);
-    lv_obj_set_style_radius(startup_overlay, 0, 0);
-#if LV_USE_GIF
-    startup_gif_asset.header.magic = LV_IMAGE_HEADER_MAGIC;
-    startup_gif_asset.header.cf = LV_COLOR_FORMAT_RAW;
-    startup_gif_asset.header.w = 320;
-    startup_gif_asset.header.h = 320;
-    startup_gif_asset.data_size = startup_gif_end - startup_gif_start;
-    startup_gif_asset.data = startup_gif_start;
-    lv_obj_t *animation = lv_gif_create(startup_overlay);
-    lv_gif_set_color_format(animation, LV_COLOR_FORMAT_RGB565);
-    lv_gif_set_src(animation, &startup_gif_asset);
-    if (lv_gif_is_loaded(animation)) {
-        /* LVGL 9.6: 0 repeats indefinitely; negative pauses after one cycle. */
-        lv_gif_set_loop_count(animation, 0);
-        lv_obj_align(animation, LV_ALIGN_CENTER, 0, -140);
-        ESP_LOGI(TAG, "startup_gif loaded=1 bytes=%u", (unsigned)startup_gif_asset.data_size);
-    } else {
-        lv_obj_delete(animation);
-        ESP_LOGW(TAG, "startup_gif loaded=0; retaining progress UI");
-    }
-#endif
-    startup_label = lv_label_create(startup_overlay);
-    lv_obj_set_style_text_font(startup_label, &lv_font_startup_zh, 0);
-    lv_obj_set_style_text_color(startup_label, lv_color_hex(0xEEEEEE), 0);
-    lv_obj_set_width(startup_label, UI_CONTENT_WIDTH);
-    lv_label_set_long_mode(startup_label, LV_LABEL_LONG_CLIP);
+    /* Separate active screen: never redraw the covered SD-font homepage. */
+    startup_overlay = lv_obj_create(NULL); qh_screen(startup_overlay);
+    startup_leaf = qh_startup_leaf(startup_overlay);
+    lv_obj_align(startup_leaf, LV_ALIGN_TOP_MID, 0, 208);
+    lv_obj_t *brand = qh_label(startup_overlay, &lv_font_startup_zh, "灵译通", QH_INK);
+    lv_obj_align(brand, LV_ALIGN_TOP_MID, 0, 466);
+    lv_obj_t *caption = qh_label(startup_overlay, &lv_font_startup_zh, "每一种表达，都被听见。", QH_MUTED);
+    lv_obj_align(caption, LV_ALIGN_TOP_MID, 0, 524);
+    startup_label = qh_label(startup_overlay, &lv_font_startup_zh, "正在启动...", QH_MUTED);
+    lv_obj_set_width(startup_label, 520);
+    lv_label_set_long_mode(startup_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(startup_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(startup_label, "正在启动...");
-    lv_obj_align(startup_label, LV_ALIGN_BOTTOM_MID, 0, -100);
-    startup_bar = lv_bar_create(startup_overlay);
-    lv_obj_set_size(startup_bar, UI_CONTENT_WIDTH - 40, 16);
-    lv_obj_align(startup_bar, LV_ALIGN_BOTTOM_MID, 0, -66);
-    lv_bar_set_range(startup_bar, 0, 100);
-    lv_bar_set_value(startup_bar, 5, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(startup_bar, lv_color_hex(0x303030), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(startup_bar, lv_color_hex(0xFFB322), LV_PART_INDICATOR);
-    startup_percent_label = lv_label_create(startup_overlay);
-    lv_obj_set_style_text_font(startup_percent_label, &lv_font_startup_zh, 0);
-    lv_obj_set_style_text_color(startup_percent_label, lv_color_hex(0xEEEEEE), 0);
-    lv_label_set_text(startup_percent_label, "5%");
-    lv_obj_align(startup_percent_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_height(startup_label,84);
+    lv_obj_set_pos(startup_label,40,748);
+    for (unsigned i=0;i<3;i++) {
+        startup_stages[i] = lv_obj_create(startup_overlay);
+        lv_obj_remove_style_all(startup_stages[i]);
+        qh_panel(startup_stages[i], QH_LINE, 2);
+        lv_obj_set_size(startup_stages[i], 160, 4);
+        lv_obj_set_pos(startup_stages[i], 44+i*176, 930);
+        startup_stage_labels[i]=qh_label(startup_overlay,&lv_font_startup_zh,"等待",QH_INK);
+        lv_obj_set_pos(startup_stage_labels[i],44+i*176,856);
+        lv_obj_set_size(startup_stage_labels[i],160,64);
+        lv_obj_set_style_text_align(startup_stage_labels[i],LV_TEXT_ALIGN_CENTER,0);
+    }
     lv_screen_load(startup_overlay);
     lv_timer_create(startup_status_timer, 200, NULL);
 }
@@ -3153,7 +3292,7 @@ static bool display_busy(void)
     /* A delayed first welcome after an offline fallback also gets protection. */
     if (atomic_load(&idle_welcome_started) && !atomic_load(&idle_welcome_finished) &&
         !atomic_load(&chat_user_has_spoken)) return true;
-    return !atomic_load(&startup_home_visible) || voice_ui_suspended() ||
+    return !atomic_load(&startup_home_visible) || qh_navigation_busy() || voice_ui_suspended() ||
         conversation_recording || conversation_finish_requested || local_loop_active ||
         /* RTC can keep sending silent PCM with its codec open. Advisory
          * ANSWERING/idle-bit states must not keep the screen awake forever. */
@@ -3198,11 +3337,16 @@ void app_main(void)
         ESP_LOGE(TAG, "failed to acquire LVGL lock");
         return;
     }
+#if CONFIG_P4_SIGN_LANGUAGE_MODE
+    portrait_observe_touch(bsp_display_get_input_dev());
+#endif
     /* Portrait transport rotates partial draws; LVGL maps GT911 coordinates. */
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     ESP_LOGI(TAG, "portrait: logical=%ldx%ld rotation=90",
              (long)lv_display_get_horizontal_resolution(display),
              (long)lv_display_get_vertical_resolution(display));
+    qh_theme_native();
+    qh_screen(lv_screen_active());
     create_diagnostics_ui();
     create_startup_placeholder();
     screen_idle_init(display_busy, display_saved_brightness);
@@ -3247,6 +3391,7 @@ void app_main(void)
     ESP_LOGI(TAG, "audio: ES8311 initialized (mic gain 30 dB, speaker 45%%)");
     start_wifi_station();
     if (xTaskCreate(startup_resource_task, "startup_resources", 12288, NULL, 2, NULL) != pdPASS) {
+        atomic_store(&startup_resources_failed,true);
         atomic_store(&startup_base_loading, false);
         atomic_store(&startup_base_done, true);
         atomic_store(&startup_fonts_done, true);

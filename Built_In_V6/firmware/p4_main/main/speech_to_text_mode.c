@@ -1,5 +1,6 @@
 #include "speech_to_text_mode.h"
 #include "ui_layout.h"
+#include "qinghe_ui.h"
 #include "text_entry.h"
 #include "transcript_turns.h"
 #include "doubao_asr.h"
@@ -10,6 +11,7 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "bsp/esp-bsp.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -33,9 +35,12 @@ static atomic_bool return_requested;
 static lv_obj_t *home_screen;
 static lv_obj_t *text_screen;
 static lv_obj_t *status_label;
+static lv_obj_t *empty_state, *empty_guide, *transcript_heading;
 static lv_obj_t *transcript_label;
 static lv_obj_t *transcript_content;
-static lv_obj_t *transcript_viewport, *hold_control;
+static lv_obj_t *transcript_viewport, *hold_control, *clear_control;
+static lv_obj_t *latest_button, *latest_label, *clear_dialog;
+static bool follow_latest, updating_transcript_view;
 static char *transcript_storage;
 static transcript_turns_t transcript;
 #define TRANSCRIPT_CAPACITY 32768
@@ -75,24 +80,67 @@ static void set_status(const char *text)
 {
     if (bsp_display_lock(0)) {
         lv_label_set_text(status_label, text);
+        const bool error=strstr(text,"失败") || strstr(text,"不足") || strstr(text,"超时");
+        lv_obj_set_style_text_color(status_label,qh_color(error?QH_ERROR:QH_INK),0);
         bsp_display_unlock();
     }
 }
 
-/* Caller holds the display lock. Native glyph metrics need no layer transform. */
-static void resize_transcript(void)
+static void update_latest_button(void)
 {
+    if (latest_button)
+        lv_obj_set_hidden(latest_button, follow_latest ||
+                          lv_obj_get_scroll_bottom(transcript_viewport) < 32);
+}
+
+static void transcript_scroll_event(lv_event_t *event)
+{
+    (void)event;
+    if (updating_transcript_view) return;
+    /* Match chat history's near-bottom tolerance, but do not mistake a
+     * hypothesis shrinking under the reader for an intentional return. */
+    follow_latest = lv_obj_get_scroll_bottom(transcript_viewport) < 32;
+    update_latest_button();
+}
+
+/* Caller holds the display lock. Preserve the top offset when an in-progress
+ * hypothesis grows or shrinks; LVGL bounds it if that offset no longer exists. */
+static void update_transcript_view(const char *text)
+{
+    const int32_t scroll_y = lv_obj_get_scroll_y(transcript_viewport);
+    updating_transcript_view = true;
+    if (text) lv_label_set_text(transcript_label, text);
+    if (empty_state) lv_obj_set_hidden(empty_state,lv_label_get_text(transcript_label)[0]!=0);
+    if (latest_label) {
+        lv_obj_set_style_text_font(latest_label, transcript_font, 0);
+        lv_obj_set_height(latest_button, transcript_font->line_height + 16);
+    }
     lv_obj_update_layout(transcript_label);
     const int32_t height = lv_obj_get_height(transcript_label);
     lv_obj_set_height(transcript_content,
                       height > lv_obj_get_height(transcript_viewport) ? height : lv_obj_get_height(transcript_viewport));
+    lv_obj_update_layout(transcript_viewport);
+    if (follow_latest || lv_obj_get_scroll_y(transcript_viewport) != scroll_y)
+        lv_obj_scroll_to_y(transcript_viewport, follow_latest ? LV_COORD_MAX : scroll_y, LV_ANIM_OFF);
+    updating_transcript_view = false;
+    update_latest_button();
+}
+
+static void resize_transcript(void)
+{
+    update_transcript_view(NULL);
 }
 
 static void set_transcript(const char *text)
 {
-    lv_label_set_text(transcript_label, text);
+    update_transcript_view(text);
+}
+
+static void latest_event(lv_event_t *event)
+{
+    (void)event;
+    follow_latest = true;
     resize_transcript();
-    lv_obj_scroll_to_y(transcript_viewport, LV_COORD_MAX, LV_ANIM_OFF);
 }
 
 void speech_to_text_mode_set_subtitle_size(unsigned pixels)
@@ -103,6 +151,8 @@ void speech_to_text_mode_set_subtitle_size(unsigned pixels)
     /* Transcript stays at native 28px; the global choice affects controls. */
     lv_font_t *selected = cached_native_font;
     lv_obj_set_style_text_font(transcript_label, selected, 0);
+    if(empty_guide)lv_obj_set_style_text_font(empty_guide,selected,0);
+    if(transcript_heading)lv_obj_set_style_text_font(transcript_heading,selected,0);
     const lv_font_t *controls = pixels == 28 ? native_font_28 : native_font_14;
     if (status_label) lv_obj_set_style_text_font(status_label, controls, 0);
     for (unsigned i = 0; i < 4; ++i)
@@ -113,18 +163,9 @@ void speech_to_text_mode_set_subtitle_size(unsigned pixels)
     resize_transcript();
 }
 
-static bool font_upgrade_cancelled(void *context)
+bool speech_to_text_mode_can_settings(void)
 {
-    (void)context;
-    return atomic_load(&return_requested);
-}
-
-static void font_upgrade_progress(unsigned percent, void *context)
-{
-    (void)context;
-    char message[100];
-    snprintf(message, sizeof(message), "正在校验/安装14和28字号字库：%u%%，请稍候", percent);
-    set_status(message);
+    return atomic_load(&active) && !atomic_load(&busy) && !atomic_load(&return_requested) && !clear_dialog;
 }
 
 /* Called with the display lock, after fonts are no longer referenced by UI. */
@@ -136,7 +177,10 @@ static void release_mode_fonts(void)
     transcript_font_owned = false;
     heap_caps_free(transcript_storage);
     transcript_storage = NULL;
-    transcript_viewport = hold_control = NULL;
+    transcript_viewport = hold_control = empty_state = empty_guide = transcript_heading = NULL;
+    latest_button = latest_label = clear_dialog = NULL;
+    clear_control = NULL;
+    for (unsigned i=0;i<4;i++) control_labels[i] = NULL;
 }
 
 esp_err_t speech_to_text_mode_resources_init(void)
@@ -237,6 +281,8 @@ static bool bind_native_mode_fonts(void)
     lv_font_t *cached = cached_native_font;
     if (cached) {
         lv_obj_set_style_text_font(transcript_label, cached, 0);
+        if(empty_guide)lv_obj_set_style_text_font(empty_guide,cached,0);
+        if(transcript_heading)lv_obj_set_style_text_font(transcript_heading,cached,0);
         if (transcript_font_owned) asr_display_font_destroy(transcript_font);
         transcript_font = cached;
         transcript_font_owned = false;
@@ -252,6 +298,36 @@ static bool bind_native_mode_fonts(void)
     const bool success = native_font_14 != NULL && cached != NULL;
     bsp_display_unlock();
     return success;
+}
+
+static esp_err_t prepare_page_fonts(void)
+{
+    const uint32_t started = esp_log_timestamp();
+    const bool reused = atomic_load(&fonts_ready);
+    esp_err_t error = ESP_OK;
+    /* Fully published boot resources are immutable for the boot lifetime.
+     * Page binding needs no installation, hash pass, or resource mutex. */
+    if (!reused) {
+        set_status("正在准备转写字库，请稍候");
+        bool acquired = false;
+        while (!atomic_load(&return_requested) && resources_lock && !acquired &&
+               esp_log_timestamp()-started < 1000)
+            acquired = xSemaphoreTake(resources_lock, pdMS_TO_TICKS(20)) == pdTRUE;
+        if (!acquired) error = ESP_ERR_TIMEOUT;
+        else {
+            /* Assets missing at boot must be repaired explicitly; entry never
+             * starts a private-LAN download or an unbounded install attempt. */
+            error = atomic_load(&fonts_ready) ? ESP_OK : sd_font_upgrade_verify_installed();
+            if (error == ESP_OK && !atomic_load(&return_requested) && !prepare_native_fonts()) error = ESP_FAIL;
+            xSemaphoreGive(resources_lock);
+        }
+    }
+    if (atomic_load(&return_requested)) error = ESP_ERR_INVALID_STATE;
+    if (error == ESP_OK && !bind_native_mode_fonts()) error = ESP_FAIL;
+    ESP_LOGI(TAG, "page_fonts reused=%d ready=%d stage=%d error=%d duration_ms=%u",
+             reused, atomic_load(&fonts_ready), atomic_load(&fonts_stage), (int)error,
+             (unsigned)(esp_log_timestamp()-started));
+    return error;
 }
 
 static void on_text(const char *text, void *arg)
@@ -382,34 +458,14 @@ static void mode_task(void *arg)
     /* Reserve the internal stack before page widgets fragment the heap. */
     xEventGroupWaitBits(events, START_BIT, pdTRUE, pdFALSE, portMAX_DELAY);
     const esp_err_t prepared = prepare_voice();
-    bool font_upgrade_failed = false;
-    if (!atomic_load(&return_requested)) {
-        set_status("正在加载本地字库...");
-        bool acquired = false;
-        while (!atomic_load(&return_requested) && resources_lock && !acquired)
-            acquired = xSemaphoreTake(resources_lock, pdMS_TO_TICKS(20)) == pdTRUE;
-        esp_err_t fonts = ESP_ERR_INVALID_STATE;
-        if (acquired) {
-            fonts = atomic_load(&fonts_ready) ? ESP_OK :
-                    sd_font_upgrade_ensure(font_upgrade_progress, font_upgrade_cancelled, NULL);
-            if (fonts == ESP_OK && !atomic_load(&return_requested) && !prepare_native_fonts())
-                fonts = ESP_FAIL;
-            if (fonts == ESP_OK && !atomic_load(&return_requested))
-                font_upgrade_failed = !bind_native_mode_fonts();
-            xSemaphoreGive(resources_lock);
-        }
-        if (fonts != ESP_OK) {
-            font_upgrade_failed = true;
-            ESP_LOGW(TAG, "font_upgrade_error=%d; retaining previous display font", (int)fonts);
-        }
-    }
-    set_status(prepared != ESP_OK ? "可输入文字；录音需网络和音频就绪" :
-               font_upgrade_failed ? "字库升级未完成，暂用旧字库；可按住说话" :
+    const esp_err_t font_error = atomic_load(&return_requested) ? ESP_ERR_INVALID_STATE : prepare_page_fonts();
+    set_status(font_error != ESP_OK ? "转写字库准备失败，请返回后重试" :
+               prepared != ESP_OK ? "可输入文字；录音需网络和音频就绪" :
                "按住下方按钮说话，松开后保留文字（最长60秒）");
     atomic_store(&busy, false);
     ESP_LOGI(TAG, "mode_ready=1 prepared_error=%d", (int)prepared);
     if (bsp_display_lock(0)) {
-        text_entry_set_enabled(text_screen, true);
+        text_entry_set_enabled(text_screen, !clear_dialog);
         bsp_display_unlock();
     }
     while (!atomic_load(&return_requested)) {
@@ -424,15 +480,15 @@ static void mode_task(void *arg)
         }
         atomic_store(&busy, false);
         if (bsp_display_lock(0)) {
-            text_entry_set_enabled(text_screen, !atomic_load(&return_requested));
+            text_entry_set_enabled(text_screen, !atomic_load(&return_requested) && !clear_dialog);
             bsp_display_unlock();
         }
     }
     if (bsp_display_lock(0)) {
-        lv_screen_load(home_screen);
+        qh_screen_load(home_screen, true);
         lv_obj_delete(text_screen);
         release_mode_fonts();
-        text_screen = transcript_label = transcript_content = status_label = NULL;
+        text_screen = transcript_label = transcript_content = status_label = empty_state = NULL;
         vEventGroupDelete(events);
         events = NULL;
         atomic_store(&active, false);
@@ -449,7 +505,7 @@ static void hold_event(lv_event_t *event)
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         atomic_store(&release_requested, true);
         if (atomic_load(&busy)) lv_label_set_text(status_label, "录音结束，等待最终文字...");
-    } else if (code == LV_EVENT_PRESSED && !atomic_load(&return_requested)) {
+    } else if (code == LV_EVENT_PRESSED && !atomic_load(&return_requested) && !clear_dialog) {
         bool expected = false;
         if (atomic_compare_exchange_strong(&busy, &expected, true)) {
             atomic_store(&release_requested, false);
@@ -474,7 +530,7 @@ static void return_event(lv_event_t *event)
 static bool accept_edited_text(const char *text, void *context)
 {
     (void)context;
-    if (atomic_load(&busy) || atomic_load(&return_requested)) {
+    if (atomic_load(&busy) || atomic_load(&return_requested) || clear_dialog) {
         text_entry_error("正在识别，请稍候");
         return false;
     }
@@ -500,20 +556,85 @@ static void input_layout(int height, void *context)
     (void)context;
     const int limit = UI_HEIGHT - UI_MARGIN - height;
     const int top = UI_ASR_INPUT_TOP < limit ? UI_ASR_INPUT_TOP : limit;
-    const int bottom = top - 20;
+    const int bottom = top - 158;
+    if (hold_control) lv_obj_set_y(hold_control, top - 82);
+    if (clear_control) lv_obj_set_y(clear_control, top - 82);
+    if (latest_button) lv_obj_set_y(latest_button, top - 146);
     if (transcript_viewport) {
         lv_obj_set_height(transcript_viewport, bottom - 152);
         resize_transcript();
     }
 }
 
+static void clear_cancel(lv_event_t *event)
+{
+    (void)event;
+    if (clear_dialog) lv_obj_delete(clear_dialog);
+    clear_dialog = NULL;
+    text_entry_set_enabled(text_screen, !atomic_load(&busy) && !atomic_load(&return_requested));
+}
+
+static void clear_confirm(lv_event_t *event)
+{
+    if (clear_dialog && !atomic_load(&busy) && !atomic_load(&return_requested)) {
+        transcript_turns_init(&transcript, transcript_storage, TRANSCRIPT_CAPACITY);
+        follow_latest = true;
+        set_transcript("");
+        lv_label_set_text(status_label, "文字已清空");
+    }
+    clear_cancel(event);
+}
+
 static void clear_event(lv_event_t *event)
 {
     (void)event;
-    if (!atomic_load(&busy)) {
-        transcript_turns_init(&transcript, transcript_storage, TRANSCRIPT_CAPACITY);
-        set_transcript("");
-        lv_obj_scroll_to_y(lv_obj_get_parent(transcript_content), 0, LV_ANIM_OFF);
+    if (clear_dialog || atomic_load(&busy) || atomic_load(&return_requested)) return;
+    /* Same blue card and cancel/confirm colors as settings. The backdrop also
+     * prevents a touch from reaching recording or editing behind the dialog. */
+    clear_dialog = lv_obj_create(text_screen);
+    lv_obj_remove_style_all(clear_dialog);
+    lv_obj_set_size(clear_dialog, UI_WIDTH, UI_HEIGHT);
+    lv_obj_set_scrollable(clear_dialog, false);
+    lv_obj_set_style_bg_color(clear_dialog, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(clear_dialog, LV_OPA_50, 0);
+    text_entry_set_enabled(text_screen, false);
+    const lv_font_t *font = transcript_font;
+    const char *message = "清空全部转写文字？\n清空后无法恢复。";
+    lv_point_t size;
+    lv_text_get_size(&size, message, font, 0, 4, 480, LV_TEXT_FLAG_NONE);
+    const int action_height = font->line_height + 16;
+    lv_obj_t *card = lv_obj_create(clear_dialog);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, 540, size.y + action_height + 80);
+    lv_obj_center(card);
+    qh_reveal(card);
+    lv_obj_set_scrollable(card, false);
+    lv_obj_set_style_bg_color(card, qh_color(QH_SURFACE), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(card, 28, 0);
+    lv_obj_t *prompt = lv_label_create(card);
+    lv_obj_set_style_text_font(prompt, font, 0);
+    lv_obj_set_style_text_color(prompt, qh_color(QH_INK), 0);
+    lv_obj_set_style_text_line_space(prompt, 4, 0);
+    lv_obj_set_width(prompt, 480);
+    lv_label_set_long_mode(prompt, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(prompt, message);
+    lv_obj_align(prompt, LV_ALIGN_TOP_MID, 0, 20);
+    for (unsigned i = 0; i < 2; ++i) {
+        const uint32_t color = i == 0 ? QH_SOFT : QH_DANGER;
+        lv_obj_t *action = lv_button_create(card);
+        lv_obj_set_size(action, 160, action_height);
+        lv_obj_set_style_pad_all(action, 0, 0);
+        lv_obj_set_style_bg_color(action, qh_color(color), 0);
+        lv_obj_set_style_bg_color(action, lv_color_darken(qh_color(color), LV_OPA_20),
+                                  LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_align(action, LV_ALIGN_BOTTOM_MID, i == 0 ? -100 : 100, -20);
+        lv_obj_t *label = lv_label_create(action);
+        lv_obj_set_style_text_font(label, font, 0);
+        lv_obj_set_style_text_color(label, qh_color(i == 0 ? QH_INK : QH_ON_ACCENT), 0);
+        lv_label_set_text(label, i == 0 ? "取消" : "确认清空");
+        lv_obj_center(label);
+        lv_obj_add_event_cb(action, i == 0 ? clear_cancel : clear_confirm, LV_EVENT_CLICKED, NULL);
     }
 }
 
@@ -521,14 +642,14 @@ static lv_obj_t *button(lv_obj_t *screen, const lv_font_t *font, const char *tex
                          int width, int x, uint32_t color, lv_event_cb_t callback)
 {
     lv_obj_t *object = lv_button_create(screen);
-    lv_obj_set_style_bg_color(object, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(object, lv_color_darken(lv_color_hex(color), LV_OPA_20),
+    qh_button(object, color);
+    lv_obj_set_style_bg_color(object, lv_color_darken(qh_color(color), LV_OPA_20),
                               LV_PART_MAIN | LV_STATE_PRESSED);
     lv_obj_set_size(object, width, 64);
     lv_obj_align(object, LV_ALIGN_BOTTOM_MID, x, -18);
     lv_obj_t *label = lv_label_create(object);
     lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, qh_color(color == QH_ACCENT ? QH_ON_ACCENT : QH_INK), LV_PART_MAIN);
     lv_label_set_text(label, text);
     lv_obj_center(label);
     if (x < 0) control_labels[0] = label;
@@ -581,17 +702,18 @@ esp_err_t speech_to_text_mode_enter(esp_codec_dev_handle_t mic,
     atomic_store(&release_requested, true); atomic_store(&return_requested, false);
     home_screen = lv_screen_active();
     text_screen = lv_obj_create(NULL);
-    lv_obj_set_scrollable(text_screen, false);
-    lv_obj_set_style_bg_color(text_screen, lv_color_hex(0x10233F), 0);
+    qh_screen(text_screen);
+    lv_obj_set_style_bg_color(text_screen, qh_color(QH_BG), 0);
     status_label = lv_label_create(text_screen);
     lv_obj_set_style_text_font(status_label, font, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(status_label, qh_color(QH_MUTED), 0);
     lv_label_set_text(status_label, "正在切换到语音转文字...");
     lv_obj_set_width(status_label, UI_CONTENT_WIDTH);
-    lv_label_set_long_mode(status_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 80);
-    lv_obj_set_height(status_label, 64);
+    lv_obj_set_height(status_label, 54);
+    transcript_heading=qh_header(text_screen,"独立转写",transcript_font,return_event,true);
     lv_obj_t *viewport = lv_obj_create(text_screen);
     transcript_viewport = viewport;
     lv_obj_remove_style_all(viewport);
@@ -600,42 +722,65 @@ esp_err_t speech_to_text_mode_enter(esp_codec_dev_handle_t mic,
     lv_obj_set_scroll_dir(viewport, LV_DIR_VER);
     lv_obj_set_scroll_elastic(viewport, false);
     lv_obj_set_scrollbar_mode(viewport, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_event_cb(viewport, transcript_scroll_event, LV_EVENT_SCROLL, NULL);
+    follow_latest = true;
     transcript_content = lv_obj_create(viewport);
     lv_obj_remove_style_all(transcript_content);
     lv_obj_set_scrollable(transcript_content, false);
     lv_obj_set_size(transcript_content, TRANSCRIPT_WIDTH, TRANSCRIPT_HEIGHT);
     transcript_label = lv_label_create(transcript_content);
     lv_obj_set_style_text_font(transcript_label, transcript_font, 0);
-    lv_obj_set_style_text_color(transcript_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(transcript_label, qh_color(QH_INK), 0);
     lv_obj_set_style_text_line_space(transcript_label, 4, 0);
     lv_obj_set_size(transcript_label, TRANSCRIPT_WIDTH, LV_SIZE_CONTENT);
     lv_label_set_long_mode(transcript_label, LV_LABEL_LONG_WRAP);
     set_transcript("");
-    lv_obj_t *back = button(text_screen, font, "返回语音", 270, -145, 0x1D72D8, return_event);
-    lv_obj_set_size(back, 180, 48);
-    lv_obj_set_align(back, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(back, UI_MARGIN, 16);
-    lv_obj_t *clear = button(text_screen, font, "清空", 132, 214, 0xC94F55, clear_event);
-    lv_obj_set_size(clear, 132, 80);
+    empty_state=lv_obj_create(transcript_content);lv_obj_remove_style_all(empty_state);
+    lv_obj_set_size(empty_state,TRANSCRIPT_WIDTH,230);lv_obj_set_pos(empty_state,0,110);
+    lv_obj_set_scrollable(empty_state,false);lv_obj_set_clickable(empty_state,false);
+    lv_obj_t *mark=qh_icon(empty_state,QH_ICON_DOCUMENT);lv_obj_align(mark,LV_ALIGN_TOP_MID,0,12);
+    lv_obj_t *guide=qh_label(empty_state,transcript_font,"按住说话，松开留字\n也可以点击键盘输入",QH_MUTED);
+    empty_guide=guide;
+    lv_obj_set_width(guide,TRANSCRIPT_WIDTH);lv_label_set_long_mode(guide,LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(guide,LV_TEXT_ALIGN_CENTER,0);lv_obj_set_pos(guide,0,68);
+    /* Use the header's empty space, outside transcript and IME geometry. */
+    latest_button = lv_button_create(text_screen);
+    lv_obj_set_size(latest_button, 180, transcript_font->line_height + 10);
+    lv_obj_set_align(latest_button, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(latest_button, UI_WIDTH - UI_MARGIN - 180, UI_ASR_INPUT_TOP - 146);
+    lv_obj_set_style_pad_all(latest_button, 0, 0);
+    qh_button(latest_button, QH_SOFT);
+    latest_label = lv_label_create(latest_button);
+    lv_obj_set_style_text_font(latest_label, transcript_font, 0);
+    lv_obj_set_style_text_color(latest_label, qh_color(QH_MUTED), 0);
+    lv_label_set_text(latest_label, "回到最新");
+    lv_obj_center(latest_label);
+    lv_obj_add_event_cb(latest_button, latest_event, LV_EVENT_CLICKED, NULL);
+    update_latest_button();
+    lv_obj_t *clear = button(text_screen, font, "清空", 132, 214, QH_SOFT, clear_event);
+    lv_obj_set_size(clear, 132, 70);
+    clear_control = clear;
     lv_obj_set_align(clear, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(clear, UI_WIDTH - UI_MARGIN - 132, UI_HOLD_TOP);
     lv_obj_t *language_button = lv_button_create(text_screen);
-    lv_obj_set_size(language_button, 60, 48);
-    lv_obj_align(language_button, LV_ALIGN_TOP_RIGHT, -UI_MARGIN, 16);
+    qh_button(language_button, QH_SOFT);
+    lv_obj_set_size(language_button, QH_TOOL_SIZE, QH_TOOL_SIZE);
+    lv_obj_set_pos(language_button,QH_LANGUAGE_X,QH_TOOL_Y);
     lv_obj_t *language_label = lv_label_create(language_button);
     lv_obj_set_style_text_font(language_label, font, 0);
     lv_label_set_text(language_label, "拼");
     lv_obj_center(language_label);
+    control_labels[3]=language_label;
     lv_obj_add_event_cb(language_button, text_entry_toggle_language, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *hold = button(text_screen, font, "按住说话，松开结束", UI_CONTENT_WIDTH - 152, 0, 0xD97706, NULL);
+    lv_obj_t *hold = button(text_screen, font, "按住说话", UI_CONTENT_WIDTH - 152, 0, QH_ACCENT, NULL);
     hold_control = hold;
-    lv_obj_set_height(hold, 80);
+    lv_obj_set_height(hold, 70);
     lv_obj_set_align(hold, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(hold, UI_MARGIN, UI_HOLD_TOP);
     lv_obj_add_event_cb(hold, hold_event, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(hold, hold_event, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(hold, hold_event, LV_EVENT_PRESS_LOST, NULL);
-    lv_screen_load(text_screen);
+    qh_screen_load(text_screen, false);
     text_entry_mount(text_screen, transcript_font, accept_edited_text, NULL, input_layout, NULL,
                      UI_ASR_INPUT_TOP, language_button);
     text_entry_set_enabled(text_screen, false);

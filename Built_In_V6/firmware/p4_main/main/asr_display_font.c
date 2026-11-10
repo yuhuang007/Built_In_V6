@@ -6,6 +6,10 @@
 #include <string.h>
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+
+static uint32_t profile[6];
+void asr_display_font_profile(uint32_t out[6]) { memcpy(out,profile,sizeof(profile)); }
 
 #define CACHE_SLOTS 512
 #define CACHE_BYTE_LIMIT (768 * 1024)
@@ -43,10 +47,11 @@ static bool source_glyph(display_font_t *cache, uint32_t letter,
 static bool glyph_descriptor(const lv_font_t *font, lv_font_glyph_dsc_t *out,
                              uint32_t letter, uint32_t next)
 {
+    const uint64_t measured=esp_timer_get_time();
     (void)next;
     display_font_t *cache = font->user_data;
     lv_font_glyph_dsc_t source;
-    if (!source_glyph(cache, letter, &source)) return false;
+    if (!source_glyph(cache, letter, &source)) { profile[5]+=esp_timer_get_time()-measured;return false; }
     *out = source;
     out->resolved_font = font;
     out->entry = NULL;
@@ -58,6 +63,7 @@ static bool glyph_descriptor(const lv_font_t *font, lv_font_glyph_dsc_t *out,
     out->ofs_y *= cache->scale;
     out->stride = out->box_w;
     out->format = LV_FONT_GLYPH_FORMAT_A8;
+    profile[5]+=esp_timer_get_time()-measured;
     return true;
 }
 
@@ -76,12 +82,13 @@ static void evict(display_font_t *cache, glyph_entry_t *entry)
     cache->bytes -= entry->bytes;
     heap_caps_free(entry->pixels);
     memset(entry, 0, sizeof(*entry));
-    ++cache->evictions;
+    ++cache->evictions; ++profile[2];
 }
 
 static const void *glyph_bitmap(lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *output)
 {
     display_font_t *cache = glyph->resolved_font->user_data;
+    const uint64_t bitmap_started=esp_timer_get_time();
     const uint32_t letter = glyph->gid.index;
     if (!output || !glyph->box_w || !glyph->box_h) return NULL;
     const size_t bytes = (size_t)glyph->box_w * glyph->box_h;
@@ -91,15 +98,17 @@ static const void *glyph_bitmap(lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *outpu
         if (!entry->pixels) { if (!empty) empty = entry; continue; }
         if (entry->letter == letter) {
             entry->age = ++cache->clock;
-            ++cache->hits;
+            ++cache->hits; ++profile[0];
             for (unsigned y = 0; y < glyph->box_h; ++y)
                 memcpy(output->data + y * output->header.stride,
                        entry->pixels + y * glyph->box_w, glyph->box_w);
             lv_draw_buf_flush_cache(output, NULL);
+            profile[4]+=esp_timer_get_time()-bitmap_started;
             return output;
         }
     }
-    ++cache->misses;
+    ++cache->misses; ++profile[1];
+    const uint64_t started=esp_timer_get_time();
     lv_font_glyph_dsc_t source;
     if (!source_glyph(cache, letter, &source)) return NULL;
     /* Decode through LVGL rather than assuming SD bitmap packing/compression. */
@@ -120,6 +129,7 @@ static const void *glyph_bitmap(lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *outpu
     }
     lv_font_glyph_release_draw_data(&source);
     lv_draw_buf_destroy(scratch);
+    profile[3]+=(uint32_t)(esp_timer_get_time()-started);
     /* Allocation failure only disables caching; the freshly drawn glyph remains. */
     if (bytes <= CACHE_BYTE_LIMIT) {
         while (!empty || cache->bytes + bytes > CACHE_BYTE_LIMIT) {
@@ -142,6 +152,7 @@ static const void *glyph_bitmap(lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *outpu
         }
     }
     lv_draw_buf_flush_cache(output, NULL);
+    profile[4]+=esp_timer_get_time()-bitmap_started;
     return output;
 }
 

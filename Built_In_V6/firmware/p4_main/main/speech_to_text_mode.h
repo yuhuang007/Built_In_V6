@@ -29,3 +29,6 @@ unsigned speech_to_text_mode_fonts_percent(void);
 esp_err_t speech_to_text_mode_enter(esp_codec_dev_handle_t microphone,
     const lv_font_t *font, speech_to_text_prepare_fn prepare,
     speech_to_text_resume_fn resume);
+
+/* Settings may cover an idle ASR page; never cover active recognition/confirmation. */
+bool speech_to_text_mode_can_settings(void);

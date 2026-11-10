@@ -1,5 +1,6 @@
 #include "chat_history.h"
 #include "ui_layout.h"
+#include "qinghe_ui.h"
 #include "chat_store_codec.h"
 #include "asr_display_font.h"
 #include "speech_to_text_mode.h"
@@ -301,37 +302,14 @@ static void resize_bubble(lv_obj_t *row, unsigned role)
     lv_obj_set_flex_align(row, role == CHAT_USER ? LV_FLEX_ALIGN_END : LV_FLEX_ALIGN_START,
                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 }
-/* Small code-drawn avatars do not require SD assets or font glyphs. */
-static lv_obj_t *avatar_part(lv_obj_t *parent, int x, int y, int w, int h,
-                             int radius, uint32_t color)
-{
-    lv_obj_t *part = lv_obj_create(parent);
-    lv_obj_remove_style_all(part);
-    lv_obj_set_pos(part, x, y);
-    lv_obj_set_size(part, w, h);
-    lv_obj_set_style_radius(part, radius, 0);
-    lv_obj_set_style_bg_color(part, lv_color_hex(color), 0);
-    lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(part, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    return part;
-}
+/* One clear line icon per avatar; message model/storage remain unchanged. */
 static void create_avatar(lv_obj_t *row, unsigned role)
 {
-    lv_obj_t *avatar = avatar_part(row, 0, 0, 44, 44, 10,
-        role == CHAT_USER ? 0x23644C : role == CHAT_ASSISTANT ? 0x32679C : 0x526478);
-    if (role == CHAT_USER) {
-        avatar_part(avatar, 15, 7, 14, 14, 7, 0xD8F5E7);
-        avatar_part(avatar, 9, 24, 26, 15, 8, 0xD8F5E7);
-    } else if (role == CHAT_ASSISTANT) {
-        avatar_part(avatar, 21, 5, 2, 7, 0, 0xDAEEFF);
-        avatar_part(avatar, 9, 13, 26, 23, 6, 0xDAEEFF);
-        avatar_part(avatar, 14, 20, 4, 4, 2, 0x254D7A);
-        avatar_part(avatar, 26, 20, 4, 4, 2, 0x254D7A);
-        avatar_part(avatar, 17, 29, 10, 2, 1, 0x254D7A);
-    } else {
-        for (int x = 10; x <= 30; x += 10)
-            avatar_part(avatar, x, 20, 4, 4, 2, 0xDAEEFF);
-    }
+    lv_obj_t *avatar=lv_obj_create(row);qh_panel(avatar,role==CHAT_USER?QH_USER:QH_SOFT,12);
+    lv_obj_set_size(avatar,44,44);lv_obj_set_style_pad_all(avatar,0,0);
+    lv_obj_set_style_border_width(avatar,1,0);lv_obj_set_style_border_color(avatar,qh_color(QH_LINE),0);
+    lv_obj_set_scrollable(avatar,false);lv_obj_set_clickable(avatar,false);
+    lv_obj_center(qh_icon(avatar,role==CHAT_USER?QH_ICON_USER:QH_ICON_ROBOT));
 }
 static void update_bubble(unsigned i, const char *text)
 {
@@ -361,7 +339,7 @@ static void render_history(lv_timer_t *timer)
         if (!empty_label) {
             empty_label = lv_label_create(viewport);
             lv_obj_set_style_text_font(empty_label, ui_font, 0);
-            lv_obj_set_style_text_color(empty_label, lv_color_hex(0x9FB5CE), 0);
+            lv_obj_set_style_text_color(empty_label, qh_color(QH_MUTED), 0);
             lv_label_set_text(empty_label, "按住下方按钮开始对话");
         }
     } else {
@@ -375,25 +353,27 @@ static void render_history(lv_timer_t *timer)
                 lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
                 lv_obj_set_scrollable(row, false);
                 lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-                lv_obj_set_style_pad_column(row, 10, 0);
+                lv_obj_set_style_pad_column(row, 8, 0);
                 resize_bubble(row, message->role);
                 if (message->role != CHAT_USER) create_avatar(row, message->role);
                 lv_obj_t *bubble = lv_obj_create(row);
                 bubbles[i] = bubble;
                 lv_obj_remove_style_all(bubble);
                 lv_obj_set_size(bubble, UI_BUBBLE_TEXT_WIDTH + 24, LV_SIZE_CONTENT);
-                lv_obj_set_style_pad_all(bubble, 12, 0);
-                lv_obj_set_style_radius(bubble, 12, 0);
+                lv_obj_set_style_pad_all(bubble, 11, 0);
+                lv_obj_set_style_border_width(bubble,1,0);
+                lv_obj_set_style_border_color(bubble,qh_color(QH_LINE),0);
+                lv_obj_set_style_radius(bubble, 24, 0);
                 lv_obj_set_style_bg_opa(bubble, LV_OPA_COVER, 0);
-                lv_obj_set_style_bg_color(bubble, lv_color_hex(message->role == CHAT_USER ?
-                    0x187754 : message->role == CHAT_ASSISTANT ? 0x254D7A : 0x385575), 0);
+                lv_obj_set_style_bg_color(bubble, qh_color(message->role == CHAT_USER ?
+                    QH_USER : message->role == CHAT_ASSISTANT ? QH_ASSISTANT : QH_SOFT), 0);
                 lv_obj_set_scrollable(bubble, false);
                 lv_obj_set_flex_flow(bubble, LV_FLEX_FLOW_COLUMN);
                 labels[i] = lv_label_create(bubble);
                 lv_obj_set_width(labels[i], LV_PCT(100));
                 lv_label_set_long_mode(labels[i], LV_LABEL_LONG_WRAP);
                 lv_obj_set_style_text_font(labels[i], ui_font, 0);
-                lv_obj_set_style_text_color(labels[i], lv_color_white(), 0);
+                lv_obj_set_style_text_color(labels[i], qh_color(QH_INK), 0);
                 update_bubble(i, message->text);
                 if (message->role == CHAT_USER) create_avatar(row, message->role);
             } else if (strcmp(lv_label_get_text(labels[i]), message->text) != 0) {
@@ -414,8 +394,9 @@ void chat_history_create_ui(lv_obj_t *parent, const lv_font_t *font)
     lv_obj_set_size(viewport, UI_CONTENT_WIDTH, UI_CHAT_HEIGHT);
     lv_obj_align(viewport, LV_ALIGN_TOP_MID, 0, UI_CHAT_TOP);
     lv_obj_set_style_pad_all(viewport, 12, 0);
-    lv_obj_set_style_pad_row(viewport, 12, 0);
-    lv_obj_set_style_bg_color(viewport, lv_color_hex(0x142C49), 0);
+    lv_obj_set_style_pad_top(viewport,0,0);
+    lv_obj_set_style_pad_row(viewport, 8, 0);
+    lv_obj_set_style_bg_color(viewport, qh_color(QH_BG), 0);
     lv_obj_set_style_bg_opa(viewport, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(viewport, 16, 0);
     lv_obj_set_flex_flow(viewport, LV_FLEX_FLOW_COLUMN);
@@ -447,4 +428,16 @@ void chat_history_set_font(const lv_font_t *font)
 void chat_history_set_view_height(int height)
 {
     if (viewport) lv_obj_set_height(viewport, height);
+}
+
+void chat_history_set_view_bounds(int top,int bottom)
+{
+    if(!viewport)return;
+    const bool follow=lv_obj_get_scroll_bottom(viewport)<32;
+    const int scroll=lv_obj_get_scroll_y(viewport);
+    const int height=bottom-top>40?bottom-top:40;
+    if(lv_obj_get_y(viewport)==top && lv_obj_get_height(viewport)==height)return;
+    lv_obj_set_y(viewport,top);lv_obj_set_height(viewport,height);
+    lv_obj_update_layout(viewport);
+    lv_obj_scroll_to_y(viewport,follow?LV_COORD_MAX:scroll,LV_ANIM_OFF);
 }

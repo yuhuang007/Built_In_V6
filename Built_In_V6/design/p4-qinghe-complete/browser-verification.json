@@ -1,0 +1,390 @@
+{
+  "date": "2026-11-02",
+  "scope": "Local browser prototype, not ESP32-P4 hardware",
+  "tool": "Tabbit installed CLI",
+  "request": "qinghe-experience-check-5",
+  "result": {
+    "bootWelcomeGate": true,
+    "errors": [],
+    "firstWakeConsumed": true,
+    "geometry": {
+      "candidate": {
+        "bottom": 641.3333358764648,
+        "height": 79.33333587646484,
+        "top": 562
+      },
+      "composer": {
+        "bottom": 1024.0000610351562,
+        "height": 382.66668701171875,
+        "top": 641.3333740234375
+      },
+      "reader": {
+        "bottom": 396.3333435058594,
+        "height": 210.33334350585938,
+        "top": 186
+      },
+      "toolbar": {
+        "bottom": 539.3333435058594,
+        "height": 66,
+        "top": 473.3333435058594
+      }
+    },
+    "intermediateWipePositions": [
+      "translateX(600px)",
+      "translateX(439px)",
+      "translateX(114px)",
+      "translateX(0px)",
+      "translateX(-128px)",
+      "translateX(-423px)",
+      "translateX(-592px)",
+      "translateX(-600px)"
+    ],
+    "keyboardAndUsb": true,
+    "offlineBoot": true,
+    "pages": [
+      {
+        "overflow": false,
+        "route": "menu",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "home",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "transcript",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "camera",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "settings",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "wifi",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "help",
+        "titleSize": "28px"
+      },
+      {
+        "overflow": false,
+        "route": "about",
+        "titleSize": "28px"
+      }
+    ],
+    "passed": true,
+    "rapidNavigationGuard": true,
+    "readingAndClear": true,
+    "reducedMotion": true,
+    "trace": [
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "kind": "modal-in"
+      },
+      {
+        "kind": "modal-out"
+      },
+      {
+        "kind": "keyboard-in"
+      },
+      {
+        "kind": "candidate-in"
+      },
+      {
+        "kind": "candidate-out"
+      },
+      {
+        "kind": "modal-in"
+      },
+      {
+        "kind": "modal-out"
+      },
+      {
+        "direction": -1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": -1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": -1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "kind": "motion-preference",
+        "reduced": true
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": -1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "kind": "motion-preference",
+        "reduced": false
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      },
+      {
+        "direction": 1,
+        "kind": "route-start"
+      },
+      {
+        "kind": "route-committed"
+      },
+      {
+        "kind": "route-end"
+      }
+    ]
+  },
+  "visualReview": {
+    "pendingTargetedRecheck": false,
+    "found": [
+      "Generic button background overrode sleep black surface",
+      "Generic SVG size overrode camera illustration"
+    ],
+    "correction": "Scoped sleep surface and camera illustration CSS selectors",
+    "renderer": "Microsoft Edge headless, isolated temporary profiles"
+  },
+  "limitations": [
+    "No firmware build or flash",
+    "No hardware FPS/CPU/audio/SD-font validation",
+    "Browser screenshots are not board captures"
+  ],
+  "targetedRequest": "qinghe-final-targeted-6",
+  "targetedResult": {
+    "boardImagesLoaded": true,
+    "boardScreenCount": 16,
+    "boardSizes": [
+      {
+        "overflow": false,
+        "width": 390
+      },
+      {
+        "overflow": false,
+        "width": 900
+      },
+      {
+        "overflow": false,
+        "width": 1440
+      }
+    ],
+    "boardStateLinks": [
+      "index.html?scene=boot",
+      "index.html?scene=welcome",
+      "index.html?page=menu",
+      "index.html?page=home",
+      "index.html?scene=listening",
+      "index.html?scene=thinking",
+      "index.html?page=transcript&scenario=reading",
+      "index.html?page=transcript&scenario=keyboard",
+      "index.html?page=transcript&scenario=confirm",
+      "index.html?page=camera",
+      "index.html?page=settings",
+      "index.html?page=wifi",
+      "index.html?page=help",
+      "index.html?page=about",
+      "index.html?page=home&scene=offline",
+      "index.html?page=transcript&scene=sleep"
+    ],
+    "camera": {
+      "height": 0.9979739130523498,
+      "width": 0.9975669471016766
+    },
+    "delayedBootGate": true,
+    "errors": [],
+    "passed": true,
+    "prototypeSizes": [
+      {
+        "overflow": false,
+        "width": 390
+      },
+      {
+        "overflow": false,
+        "width": 900
+      },
+      {
+        "overflow": false,
+        "width": 1440
+      }
+    ],
+    "settingsReturn": true,
+    "sleepColor": "rgb(6, 8, 5)"
+  },
+  "cleanup": {
+    "finished": true,
+    "forcedCleanup": false,
+    "retained": [
+      "Complete prototype",
+      "Storyboard"
+    ],
+    "closed": [
+      "ascii.rest",
+      "progress-bar",
+      "spinners"
+    ],
+    "externalReferenceWarnings": "Tabbit reported recoverable site PAGE_SCRIPT_ERROR on ascii.rest while closing reference pages; local prototype checks had no pageerror"
+  }
+}

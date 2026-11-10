@@ -70,7 +70,7 @@ __declspec(dllexport) void map_area(lv_area_t *a) {
     lvgl_port_rotate_area(&d, a);
 }
 __declspec(dllexport) int geometry_valid(void) {
-    return UI_CHAT_TOP + UI_CHAT_HEIGHT <= UI_HEIGHT - 204 &&
+    return UI_CHAT_TOP + UI_CHAT_HEIGHT <= UI_HOME_INPUT_TOP - 94 &&
            UI_TRANSCRIPT_HEIGHT + 80 <= UI_HEIGHT - 180 &&
            UI_BUBBLE_TEXT_WIDTH + 24 + 44 + 10 + 24 <= UI_CONTENT_WIDTH &&
            UI_CONTENT_WIDTH + 2 * UI_MARGIN == UI_WIDTH;
@@ -117,6 +117,7 @@ typedef bool (*dw_gdma_trans_done_event_callback_t)(void *, const void *, void *
 #define memory_order_relaxed 0
 #define atomic_load_explicit(p, order) (*(p))
 #define atomic_store_explicit(p, v, order) (*(p) = (v))
+#define atomic_store(p, v) (*(p) = (v))
 #define atomic_fetch_add_explicit(p, v, order) ((*(p)) += (v))
 #define IRAM_ATTR
 #define pdFALSE 0
@@ -244,28 +245,34 @@ void simulate_retirement(void) { portrait_dma_done(0, 0, 0); }
 __declspec(dllexport) int accelerated_case(void) {
     uint16_t source[72 * 65], actual[96 * 80], expected[96 * 80];
     errors = cache_syncs = hardware_copies = 0;
+    scanout.ui_cpu_chunks = 0;
     for (int i = 0; i < 72 * 65; i++) source[i] = i;
     for (int i = 0; i < 96 * 80; i++) actual[i] = expected[i] = 777;
     portrait_copy(actual, 96, 80, source, 72, 3, 7, 67, 71);
     portrait_frame_copy(expected, 96, 80, source, 72, 3, 7, 67, 71);
-    if (hardware_copies != 1 || cache_syncs != 1 ||
+    if (hardware_copies != 0 || cache_syncs != 0 ||
         memcmp(actual, expected, sizeof(actual))) errors++;
     portrait_copy(actual, 96, 80, source, 72, 0, 0, 1, 1);
     portrait_frame_copy(expected, 96, 80, source, 72, 0, 0, 1, 1);
-    if (hardware_copies != 1 || memcmp(actual, expected, sizeof(actual))) errors++;
+    if (hardware_copies != 0 || memcmp(actual, expected, sizeof(actual))) errors++;
     portrait_editor_cpu_copy(true);
     portrait_copy(actual, 96, 80, source, 72, 3, 7, 67, 71);
     portrait_frame_copy(expected, 96, 80, source, 72, 3, 7, 67, 71);
-    if (hardware_copies != 1 || memcmp(actual, expected, sizeof(actual))) errors++;
+    if (hardware_copies != 0 || memcmp(actual, expected, sizeof(actual))) errors++;
     portrait_editor_cpu_region(72);
     portrait_copy(actual, 96, 80, source, 72, 3, 7, 67, 71);
-    if (hardware_copies != 2 || memcmp(actual, expected, sizeof(actual))) errors++;
+    if (hardware_copies != 0 || memcmp(actual, expected, sizeof(actual))) errors++;
     portrait_editor_cpu_copy(false);
+    portrait_copy(actual, 96, 80, source, 72, 3, 7, 67, 71);
+    portrait_frame_copy(expected, 96, 80, source, 72, 3, 7, 67, 71);
+    if (hardware_copies != 0 || memcmp(actual, expected, sizeof(actual))) errors++;
+    if (scanout.ui_cpu_chunks != 5) errors++;
     return errors;
 }
 __declspec(dllexport) int scanout_case(void) {
     uint16_t front[96], back[96], source[8];
     errors = waits = submitted = ready = copied = dma_mode = 0;
+    scanout.ui_flush_done = 0;
     memset(&retirement, 0, sizeof(retirement));
     for (int i = 0; i < 96; ++i) front[i] = back[i] = 100;
     for (int i = 0; i < 8; ++i) source[i] = i + 1;
@@ -296,6 +303,7 @@ __declspec(dllexport) int scanout_case(void) {
     portrait_flush(&d, &a, (uint8_t *)source);
     if (waits != 4 || copied != 34 || memcmp(front, back, sizeof(front))) errors++;
     if (front[6 * 12 + 2] != 1 || front[5 * 12 + 3] != 4 || front[0] != 100) errors++;
+    if (scanout.ui_flush_done != 4) errors++;
     return errors;
 }
 __declspec(dllexport) int native_preview_case(void) {
@@ -321,7 +329,7 @@ __declspec(dllexport) int native_preview_case(void) {
         }
     /* Full camera replacement waits for retirement but copies no old image. */
     if (portrait_preview_frame(source, 16, 12, &preview, 90)) errors++;
-    if (submitted != 2 || waits != 2 || copied) errors++;
+    if (submitted != 2 || waits != 2 || copied || hardware_copies != 2) errors++;
     /* A full UI background repaint must preserve the current camera layer. */
     lv_display_t d = {1};
     lv_area_t all = {0, 0, 7, 11};
@@ -338,6 +346,7 @@ __declspec(dllexport) int native_preview_case(void) {
     portrait_flush(&d, &all, (uint8_t *)ui);
     for (int i = 0; i < 96; i++) if (front[i] != 888) errors++;
     if (portrait_preview_frame(0, 16, 12, &preview, 90) != ESP_ERR_INVALID_ARG) errors++;
+    if (hardware_copies != 2) errors++;
     return errors;
 }
 __declspec(dllexport) int dma_retirement_case(void) {
@@ -446,7 +455,7 @@ __declspec(dllexport) int dma_gap_case(void) {
     def test_scanout_only_presents_complete_frames_and_retires_before_reuse(self):
         self.assertEqual(self.scanout_lib.scanout_case(), 0)
 
-    def test_accelerated_rotation_preserves_offsets_stride_and_small_fallback(self):
+    def test_ui_cpu_rotation_preserves_offsets_stride_and_ignores_editor_state(self):
         self.assertEqual(self.scanout_lib.accelerated_case(), 0)
 
     def test_direct_camera_matches_combined_rotation_and_preserves_ui_lifecycle(self):
@@ -485,28 +494,23 @@ __declspec(dllexport) int dma_gap_case(void) {
         home = function(main, "static void create_diagnostics_ui(void)\n{")
         self.assertIn("lv_label_set_long_mode(status_label, LV_LABEL_LONG_WRAP)", home)
         self.assertNotIn("LV_LABEL_LONG_SCROLL", home)
-        self.assertIn("UI_STATUS_HEIGHT", home)
+        self.assertIn("lv_obj_set_size(status_label, UI_CONTENT_WIDTH, LV_SIZE_CONTENT)", home)
         layout = (MAIN / "ui_layout.h").read_text(encoding="utf-8")
         import re
         values = {key: int(value) for key, value in
                   re.findall(r"#define (UI_\w+) (\d+)", layout)}
-        self.assertGreaterEqual(values["UI_STATUS_HEIGHT"], 2 * 28 + 4)
-        self.assertLessEqual(values["UI_STATUS_TOP"] + values["UI_STATUS_HEIGHT"],
-                             values["UI_CHAT_TOP"])
-        self.assertEqual(values["UI_CHAT_TOP"] + values["UI_CHAT_HEIGHT"], values["UI_HOME_INPUT_TOP"] - 20)
+        self.assertGreaterEqual(values["UI_STATUS_HEIGHT"], 2 * 54)
+        self.assertEqual(values["UI_STATUS_TOP"] + 27 + 16, values["UI_CHAT_TOP"])
+        self.assertEqual(values["UI_CHAT_TOP"] + values["UI_CHAT_HEIGHT"], values["UI_HOME_INPUT_TOP"] - 94)
         self.assertEqual(values["UI_HOME_INPUT_TOP"] + values["UI_INPUT_COLLAPSED"] + 20,
-                         values["UI_MODE_BUTTON_TOP"])
-        self.assertEqual(values["UI_MODE_BUTTON_TOP"] + 64 + 20, values["UI_HOLD_TOP"])
-        self.assertEqual(values["UI_ASR_INPUT_TOP"] + values["UI_INPUT_COLLAPSED"] + 20,
-                         values["UI_HOLD_TOP"])
-        self.assertEqual(152 + values["UI_TRANSCRIPT_HEIGHT"], values["UI_ASR_INPUT_TOP"] - 20)
-        self.assertEqual(values["UI_HOLD_TOP"] + 80, values["UI_HEIGHT"] - values["UI_MARGIN"])
+                         values["UI_HEIGHT"])
+        self.assertEqual(152 + values["UI_TRANSCRIPT_HEIGHT"], values["UI_ASR_INPUT_TOP"] - 158)
         self.assertGreaterEqual(values["UI_HEIGHT"] - values["UI_MARGIN"] -
                                 values["UI_INPUT_TOUCH"] - 20 - values["UI_CHAT_TOP"], 100)
 
     def test_settings_scroll_has_no_elastic_redraw_and_transport_is_optimized(self):
         main = (MAIN / "main.c").read_text(encoding="utf-8")
-        start = main.index("lv_obj_set_size(list, UI_CONTENT_WIDTH, 836)")
+        start = main.index("lv_obj_set_size(list, UI_CONTENT_WIDTH, UI_SETTINGS_HEIGHT)")
         self.assertIn("lv_obj_set_scroll_elastic(list, false)", main[start:start + 700])
         cmake = (MAIN / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn('set_source_files_properties(portrait_display.c PROPERTIES COMPILE_OPTIONS "-O2")', cmake)

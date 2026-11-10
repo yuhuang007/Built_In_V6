@@ -1,0 +1,764 @@
+{
+  "canvas": [
+    600,
+    1024
+  ],
+  "background": "F5F6ED",
+  "source": "p4-qinghe-complete/index.html#menu DOM, 600x1024 logical coordinates; measured 2026-11-02; compact single-line revision from user photos 2026-11-02",
+  "items": [
+    {
+      "id": "wordmark",
+      "kind": "label",
+      "box": [
+        30,
+        0,
+        335,
+        40
+      ],
+      "text": "LINGYITONG / 灵译通",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        30,
+        0,
+        335,
+        54
+      ]
+    },
+    {
+      "id": "connection_dot",
+      "kind": "panel",
+      "box": [
+        378,
+        20,
+        5,
+        5
+      ],
+      "color": "A47548",
+      "radius": 3,
+      "box28": [
+        378,
+        25,
+        5,
+        5
+      ]
+    },
+    {
+      "id": "connection",
+      "kind": "label",
+      "box": [
+        390,
+        0,
+        180,
+        40
+      ],
+      "text": "服务准备中",
+      "font": "body",
+      "color": "596A50",
+      "align": "right",
+      "box28": [
+        390,
+        0,
+        180,
+        54
+      ]
+    },
+    {
+      "id": "logo",
+      "kind": "image",
+      "box": [
+        30,
+        44,
+        64,
+        64
+      ],
+      "resource": "native",
+      "color": "314633",
+      "box28": [
+        30,
+        58,
+        64,
+        64
+      ]
+    },
+    {
+      "id": "product",
+      "kind": "label",
+      "box": [
+        110,
+        36,
+        330,
+        54
+      ],
+      "text": "灵译通",
+      "font": "heading",
+      "color": "314633",
+      "box28": [
+        110,
+        54,
+        330,
+        54
+      ]
+    },
+    {
+      "id": "subtitle",
+      "kind": "label",
+      "box": [
+        110,
+        90,
+        390,
+        54
+      ],
+      "text": "沟通，按你的方式",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        110,
+        108,
+        390,
+        54
+      ]
+    },
+    {
+      "id": "settings",
+      "kind": "button",
+      "box": [
+        524,
+        48,
+        56,
+        56
+      ],
+      "color": "E2E9D4",
+      "radius": 24,
+      "action": "settings",
+      "box28": [
+        524,
+        58,
+        56,
+        56
+      ]
+    },
+    {
+      "id": "settings_icon",
+      "parent": "settings",
+      "kind": "image",
+      "box": [
+        540,
+        64,
+        24,
+        24
+      ],
+      "resource": "settings",
+      "color": "314633",
+      "box28": [
+        540,
+        74,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "state_dot",
+      "kind": "panel",
+      "box": [
+        30,
+        157,
+        5,
+        5
+      ],
+      "color": "A47548",
+      "radius": 3,
+      "box28": [
+        30,
+        187,
+        5,
+        5
+      ]
+    },
+    {
+      "id": "state",
+      "kind": "label",
+      "box": [
+        43,
+        132,
+        332,
+        54
+      ],
+      "text": "语音准备中",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        43,
+        162,
+        332,
+        54
+      ]
+    },
+    {
+      "id": "help",
+      "kind": "button",
+      "box": [
+        420,
+        132,
+        150,
+        54
+      ],
+      "color": "F5F6ED",
+      "radius": 12,
+      "action": "help",
+      "box28": [
+        420,
+        162,
+        150,
+        54
+      ]
+    },
+    {
+      "id": "help_text",
+      "parent": "help",
+      "kind": "label",
+      "box": [
+        420,
+        132,
+        120,
+        54
+      ],
+      "text": "使用帮助",
+      "font": "body",
+      "color": "586E4E",
+      "align": "right",
+      "box28": [
+        420,
+        162,
+        120,
+        54
+      ]
+    },
+    {
+      "id": "help_arrow",
+      "parent": "help",
+      "kind": "image",
+      "box": [
+        548,
+        151,
+        16,
+        16
+      ],
+      "resource": "arrow_small",
+      "color": "586E4E",
+      "box28": [
+        548,
+        181,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "divider",
+      "kind": "panel",
+      "box": [
+        30,
+        190,
+        540,
+        1
+      ],
+      "color": "E0E5D5",
+      "radius": 0,
+      "box28": [
+        30,
+        222,
+        540,
+        1
+      ]
+    },
+    {
+      "id": "greeting",
+      "kind": "label",
+      "box": [
+        30,
+        196,
+        540,
+        36
+      ],
+      "text": "很高兴见到你",
+      "font": "body",
+      "color": "596A50",
+      "align": "center",
+      "box28": [
+        30,
+        228,
+        540,
+        54
+      ]
+    },
+    {
+      "id": "slogan",
+      "kind": "image",
+      "box": [
+        124,
+        236,
+        352,
+        56
+      ],
+      "resource": "slogan",
+      "color": "314633",
+      "box28": [
+        124,
+        292,
+        352,
+        56
+      ]
+    },
+    {
+      "id": "hero",
+      "kind": "panel",
+      "box": [
+        30,
+        306,
+        540,
+        310
+      ],
+      "color": "E2E9D4",
+      "radius": 32,
+      "box28": [
+        30,
+        366,
+        540,
+        326
+      ]
+    },
+    {
+      "id": "pill",
+      "parent": "hero",
+      "kind": "panel",
+      "box": [
+        187,
+        322,
+        226,
+        44
+      ],
+      "color": "E2E9D4",
+      "radius": 22,
+      "border": "C8D6BB",
+      "box28": [
+        116,
+        378,
+        368,
+        58
+      ]
+    },
+    {
+      "id": "pill_dot",
+      "parent": "pill",
+      "kind": "panel",
+      "box": [
+        201,
+        342,
+        5,
+        5
+      ],
+      "color": "586E4E",
+      "radius": 3,
+      "box28": [
+        130,
+        404,
+        5,
+        5
+      ]
+    },
+    {
+      "id": "pill_text",
+      "parent": "pill",
+      "kind": "label",
+      "box": [
+        214,
+        322,
+        185,
+        44
+      ],
+      "text": "每一种表达，都被听见",
+      "font": "body",
+      "color": "586E4E",
+      "align": "center",
+      "box28": [
+        143,
+        378,
+        327,
+        58
+      ]
+    },
+    {
+      "id": "waveform",
+      "parent": "hero",
+      "kind": "wave",
+      "box": [
+        195,
+        378,
+        210,
+        106
+      ],
+      "box28": [
+        195,
+        438,
+        210,
+        106
+      ]
+    },
+    {
+      "id": "hero_caption",
+      "parent": "hero",
+      "kind": "label",
+      "box": [
+        50,
+        473,
+        500,
+        54
+      ],
+      "text": "说话或打字，按你的方式来",
+      "font": "body",
+      "color": "596A50",
+      "align": "center",
+      "box28": [
+        50,
+        548,
+        500,
+        54
+      ]
+    },
+    {
+      "id": "voice",
+      "parent": "hero",
+      "kind": "button",
+      "box": [
+        52,
+        530,
+        496,
+        68
+      ],
+      "color": "3E5947",
+      "radius": 34,
+      "action": "voice",
+      "box28": [
+        52,
+        606,
+        496,
+        68
+      ]
+    },
+    {
+      "id": "mic",
+      "parent": "voice",
+      "kind": "image",
+      "box": [
+        76,
+        552,
+        24,
+        24
+      ],
+      "resource": "mic",
+      "color": "FAFFF6",
+      "box28": [
+        76,
+        628,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "voice_title",
+      "parent": "voice",
+      "kind": "label",
+      "box": [
+        116,
+        537,
+        382,
+        54
+      ],
+      "text": "与AI交流未来",
+      "font": "heading",
+      "color": "FAFFF6",
+      "box28": [
+        116,
+        613,
+        382,
+        54
+      ]
+    },
+    {
+      "id": "voice_arrow",
+      "parent": "voice",
+      "kind": "image",
+      "box": [
+        504,
+        552,
+        24,
+        24
+      ],
+      "resource": "arrow",
+      "color": "FAFFF6",
+      "box28": [
+        504,
+        628,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "transcript",
+      "kind": "button",
+      "box": [
+        30,
+        634,
+        263,
+        180
+      ],
+      "color": "EEEEE0",
+      "radius": 25,
+      "action": "transcript",
+      "box28": [
+        30,
+        700,
+        263,
+        224
+      ]
+    },
+    {
+      "id": "transcript_icon",
+      "parent": "transcript",
+      "kind": "image",
+      "box": [
+        51,
+        657,
+        24,
+        24
+      ],
+      "resource": "document",
+      "color": "314633",
+      "box28": [
+        51,
+        723,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "transcript_arrow",
+      "parent": "transcript",
+      "kind": "image",
+      "box": [
+        249,
+        657,
+        24,
+        24
+      ],
+      "resource": "arrow",
+      "color": "314633",
+      "box28": [
+        249,
+        723,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "transcript_title",
+      "parent": "transcript",
+      "kind": "label",
+      "box": [
+        51,
+        691,
+        222,
+        54
+      ],
+      "text": "独立转写",
+      "font": "heading",
+      "color": "314633",
+      "box28": [
+        51,
+        757,
+        222,
+        54
+      ]
+    },
+    {
+      "id": "transcript_caption",
+      "parent": "transcript",
+      "kind": "label",
+      "box": [
+        51,
+        752,
+        222,
+        54
+      ],
+      "text": "把说的话，变成文字",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        51,
+        811,
+        222,
+        108
+      ]
+    },
+    {
+      "id": "camera",
+      "kind": "button",
+      "box": [
+        307,
+        634,
+        263,
+        180
+      ],
+      "color": "E7ECE1",
+      "radius": 25,
+      "action": "camera",
+      "box28": [
+        307,
+        700,
+        263,
+        224
+      ]
+    },
+    {
+      "id": "camera_icon",
+      "parent": "camera",
+      "kind": "image",
+      "box": [
+        328,
+        657,
+        24,
+        24
+      ],
+      "resource": "camera",
+      "color": "314633",
+      "box28": [
+        328,
+        723,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "camera_arrow",
+      "parent": "camera",
+      "kind": "image",
+      "box": [
+        526,
+        657,
+        24,
+        24
+      ],
+      "resource": "arrow",
+      "color": "314633",
+      "box28": [
+        526,
+        723,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "camera_title",
+      "parent": "camera",
+      "kind": "label",
+      "box": [
+        328,
+        691,
+        222,
+        54
+      ],
+      "text": "相机预览",
+      "font": "heading",
+      "color": "314633",
+      "box28": [
+        328,
+        757,
+        222,
+        54
+      ]
+    },
+    {
+      "id": "camera_caption",
+      "parent": "camera",
+      "kind": "label",
+      "box": [
+        328,
+        752,
+        222,
+        54
+      ],
+      "text": "让表达更直观",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        328,
+        818,
+        222,
+        54
+      ]
+    },
+    {
+      "id": "usb_icon",
+      "kind": "image",
+      "box": [
+        76,
+        950,
+        24,
+        24
+      ],
+      "resource": "keyboard",
+      "color": "596A50",
+      "box28": [
+        76,
+        950,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "usb_caption",
+      "kind": "label",
+      "box": [
+        112,
+        936,
+        458,
+        54
+      ],
+      "text": "也可以接入 USB 键盘，直接输入",
+      "font": "body",
+      "color": "596A50",
+      "box28": [
+        112,
+        936,
+        458,
+        54
+      ]
+    }
+  ],
+  "wave_heights": [
+    22,
+    42,
+    64,
+    90,
+    60,
+    38,
+    72,
+    106,
+    76,
+    48,
+    26
+  ],
+  "wave_colors": [
+    "71896A",
+    "A1B091",
+    "FFFDF2",
+    "A1B091",
+    "71896A",
+    "FFFDF2",
+    "71896A",
+    "A1B091",
+    "FFFDF2",
+    "A1B091",
+    "71896A"
+  ]
+}

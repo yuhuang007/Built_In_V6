@@ -1,0 +1,18 @@
+{
+  "title_text": "慢慢说，我在听",
+  "title_font": "Microsoft YaHei Bold, Windows msyhbd.ttc; rasterized offline at 44px; font file not redistributed",
+  "title_font_sha256": "519309b7ab0479c4dc3ace5e291de5a8702175be5586e165bc810267bd4619a5",
+  "format": "A4 alpha masks, recolored by LVGL; no runtime scaling for title",
+  "resource_bytes": {
+    "slogan": 9856,
+    "mic": 288,
+    "arrow": 288,
+    "document": 288,
+    "camera": 288,
+    "settings": 288,
+    "keyboard": 288,
+    "arrow_small": 128
+  },
+  "total_resource_bytes": 11712,
+  "preview": "600x1024 layout preview only; shared firmware layout and quantized masks; regular glyph placement approximated using same Source Han source font"
+}

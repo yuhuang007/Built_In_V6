@@ -1,5 +1,6 @@
 #include "wifi_settings.h"
 #include "ui_layout.h"
+#include "qinghe_ui.h"
 #include <stdatomic.h>
 #include <limits.h>
 #include <stdio.h>
@@ -45,7 +46,7 @@ static lv_obj_t *network_menu;
 static char menu_ssid[33];
 static lv_obj_t *screen, *return_screen, *status, *list, *editor, *ssid_input, *password_input, *open_choice;
 static lv_obj_t *editor_error;
-static lv_obj_t *current_network;
+static lv_obj_t *current_network, *footer;
 static lv_obj_t *scan_button, *manual_button;
 static const lv_font_t *ui_font;
 static unsigned displayed_revision;
@@ -372,7 +373,7 @@ static lv_obj_t *label(lv_obj_t *parent, const char *text)
 {
     lv_obj_t *object = lv_label_create(parent);
     lv_obj_set_style_text_font(object, ui_font, 0);
-    lv_obj_set_style_text_color(object, lv_color_white(), 0);
+    lv_obj_set_style_text_color(object, qh_color(QH_INK), 0);
     lv_label_set_text(object, text);
     return object;
 }
@@ -380,8 +381,8 @@ static lv_obj_t *label(lv_obj_t *parent, const char *text)
 static lv_obj_t *button(lv_obj_t *parent, const char *text, int width, lv_event_cb_t callback)
 {
     lv_obj_t *object = lv_button_create(parent);
-    lv_obj_set_size(object, width, 52);
-    lv_obj_set_style_bg_color(object, lv_color_hex(0x1D72D8), 0);
+    lv_obj_set_size(object, width, ui_font->line_height + 16 > 70 ? ui_font->line_height + 16 : 70);
+    qh_button(object, QH_SOFT);
     lv_obj_set_style_radius(object, 12, 0);
     lv_obj_t *caption = label(object, text);
     lv_obj_center(caption);
@@ -405,7 +406,7 @@ static void close_menu(void)
     network_menu = NULL;
     clear_private(menu_ssid, sizeof(menu_ssid));
 }
-static void back(lv_event_t *event) { (void)event; close_editor(); close_menu(); lv_screen_load(return_screen); }
+static void back(lv_event_t *event) { (void)event; close_editor(); close_menu(); qh_screen_load(return_screen, true); }
 
 static bool enqueue(command_t *command)
 {
@@ -455,28 +456,31 @@ static void edit_network(const char *ssid, bool open)
     lv_obj_set_size(editor, UI_WIDTH, UI_HEIGHT);
     lv_obj_set_style_pad_all(editor, 16, 0);
     lv_obj_center(editor);
+    qh_reveal(editor);
     lv_obj_set_scrollable(editor, false);
-    lv_obj_set_style_bg_color(editor, lv_color_hex(0x10233F), 0);
-    lv_obj_t *caption = label(editor, "连接 Wi-Fi");
-    lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 20, 4);
-    lv_obj_t *cancel = button(editor, "取消", 120, cancel_editor);
-    lv_obj_align(cancel, LV_ALIGN_TOP_RIGHT, -154, 0);
-    lv_obj_t *connect = button(editor, "连接", 140, connect_clicked);
-    lv_obj_align(connect, LV_ALIGN_TOP_RIGHT, -10, 0);
+    lv_obj_set_style_bg_color(editor, qh_color(QH_BG), 0);
+    lv_obj_t *caption=qh_header(editor,"连接 Wi-Fi",ui_font,cancel_editor,false);
+    lv_obj_t *connect=button(editor,"连接",140,connect_clicked);
+    lv_obj_align(connect,LV_ALIGN_TOP_RIGHT,-10,76);
     caption = label(editor, "网络名称");
-    lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 12, 98);
+    lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 12, 150);
     ssid_input = lv_textarea_create(editor);
     lv_obj_set_size(ssid_input, UI_WIDTH - 64, 64);
-    lv_obj_align(ssid_input, LV_ALIGN_TOP_LEFT, 12, 140);
+    lv_obj_align(ssid_input, LV_ALIGN_TOP_LEFT, 12, 210);
+    qh_panel(ssid_input, QH_SURFACE, 16);
+    lv_obj_set_style_pad_ver(ssid_input, 0, 0);
+    lv_obj_set_style_text_color(ssid_input, qh_color(QH_INK), 0);
     lv_textarea_set_one_line(ssid_input, true);
     lv_textarea_set_max_length(ssid_input, 32);
     lv_obj_set_style_text_font(ssid_input, ui_font, 0);
     lv_textarea_set_text(ssid_input, ssid);
     caption = label(editor, "密码");
-    lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 12, 232);
+    lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 12, 290);
     password_input = lv_textarea_create(editor);
     lv_obj_set_size(password_input, UI_WIDTH - 64, 64);
-    lv_obj_align(password_input, LV_ALIGN_TOP_LEFT, 12, 274);
+    lv_obj_align(password_input, LV_ALIGN_TOP_LEFT, 12, 350);
+    qh_panel(password_input, QH_SURFACE, 16);
+    lv_obj_set_style_text_color(password_input, qh_color(QH_INK), 0);
     lv_textarea_set_one_line(password_input, true);
     lv_textarea_set_password_mode(password_input, true);
     lv_textarea_set_password_show_time(password_input, 0);
@@ -486,18 +490,22 @@ static void edit_network(const char *ssid, bool open)
     open_choice = lv_checkbox_create(editor);
     lv_checkbox_set_text(open_choice, "无密码网络");
     lv_obj_set_style_text_font(open_choice, ui_font, 0);
-    lv_obj_set_style_text_color(open_choice, lv_color_white(), 0);
-    lv_obj_align(open_choice, LV_ALIGN_TOP_LEFT, 12, 370);
+    lv_obj_set_style_text_color(open_choice, qh_color(QH_INK), 0);
+    lv_obj_align(open_choice, LV_ALIGN_TOP_LEFT, 12, 434);
     if (open) lv_obj_add_state(open_choice, LV_STATE_CHECKED);
     editor_error = label(editor, "");
     lv_obj_set_width(editor_error, UI_WIDTH - 64);
+    lv_obj_set_height(editor_error, ui_font->line_height*2);
     lv_label_set_long_mode(editor_error, LV_LABEL_LONG_WRAP);
-    lv_obj_align(editor_error, LV_ALIGN_TOP_LEFT, 12, 430);
-    lv_obj_set_style_text_color(editor_error, lv_color_hex(0xFFB3AC), 0);
+    lv_obj_align(editor_error, LV_ALIGN_TOP_LEFT, 12, 502);
+    lv_obj_set_style_text_color(editor_error, qh_color(QH_ERROR), 0);
     lv_obj_t *keyboard = lv_keyboard_create(editor);
     lv_obj_set_size(keyboard, UI_WIDTH - 40, 340);
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_text_font(keyboard, LV_FONT_DEFAULT, LV_PART_ITEMS);
+    qh_panel(keyboard, QH_BG, 0);
+    lv_obj_set_style_bg_color(keyboard, qh_color(QH_SURFACE), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(keyboard, qh_color(QH_INK), LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard, ssid[0] ? password_input : ssid_input);
     lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_CANCEL, NULL);
@@ -571,14 +579,16 @@ static void manage(lv_event_t *event)
     close_menu();
     memcpy(menu_ssid, displayed_networks[index].ssid, sizeof(menu_ssid));
     network_menu = lv_obj_create(screen);
-    lv_obj_set_size(network_menu, 560, 360);
+    lv_obj_set_size(network_menu, 560, 520);
     lv_obj_set_style_pad_all(network_menu, 16, 0);
     lv_obj_center(network_menu);
+    qh_reveal(network_menu);
     lv_obj_set_scrollable(network_menu, false);
-    lv_obj_set_style_bg_color(network_menu, lv_color_hex(0x254D7A), 0);
+    lv_obj_set_style_bg_color(network_menu, qh_color(QH_SURFACE), 0);
     lv_obj_t *caption = label(network_menu, menu_ssid);
     lv_obj_set_width(caption, 510);
-    lv_label_set_long_mode(caption, LV_LABEL_LONG_CLIP);
+    lv_obj_set_height(caption, 54);
+    lv_label_set_long_mode(caption, LV_LABEL_LONG_DOT);
     lv_obj_align(caption, LV_ALIGN_TOP_LEFT, 8, 4);
     caption = label(network_menu, "忘记后再次连接需输密码，当前连接保持。\n修改密码仅在连接成功后保存。");
     lv_obj_set_width(caption, 510);
@@ -589,7 +599,8 @@ static void manage(lv_event_t *event)
     lv_obj_t *change = button(network_menu, "修改密码", 160, menu_edit);
     lv_obj_align(change, LV_ALIGN_BOTTOM_MID, 0, -6);
     lv_obj_t *forget = button(network_menu, "忘记网络", 160, menu_forget);
-    lv_obj_set_style_bg_color(forget, lv_color_hex(0xC94F55), 0);
+    lv_obj_set_style_bg_color(forget, qh_color(QH_DANGER), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(forget, 0), qh_color(QH_ON_ACCENT), 0);
     lv_obj_align(forget, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
 }
 
@@ -598,6 +609,34 @@ static void scan(lv_event_t *event)
     (void)event;
     command_t command = { .type = CMD_SCAN };
     if (enqueue(&command)) atomic_store(&state, SCANNING);
+}
+
+/* Keep the list bottom anchored, while the preceding natural line boxes grow
+ * for 14/28px fonts and wrapped connection/error messages. No reserved status
+ * rows or hidden placeholder objects consume the space above the list. */
+static void layout_network_page(void)
+{
+    if (!list || !footer) return;
+    lv_obj_set_height(current_network, LV_SIZE_CONTENT);
+    lv_obj_set_height(status, LV_SIZE_CONTENT);
+    lv_obj_set_height(footer, LV_SIZE_CONTENT);
+    lv_obj_update_layout(screen);
+    const int controls_bottom = lv_obj_get_y(scan_button) + lv_obj_get_height(scan_button);
+    lv_obj_set_pos(current_network, UI_MARGIN, controls_bottom + 12);
+    lv_obj_set_pos(status, UI_MARGIN,
+                   lv_obj_get_y(current_network) + lv_obj_get_height(current_network) + 8);
+    const int top = lv_obj_get_y(status) + lv_obj_get_height(status) + 12;
+    const int bottom = UI_HEIGHT - 22 - lv_obj_get_height(footer) - 12;
+    lv_obj_set_pos(list, UI_MARGIN, top);
+    lv_obj_set_size(list, UI_CONTENT_WIDTH, bottom > top ? bottom - top : 1);
+    lv_obj_set_pos(footer, UI_MARGIN, UI_HEIGHT - 22 - lv_obj_get_height(footer));
+}
+
+static bool network_label_text(lv_obj_t *object, const char *text)
+{
+    if (!strcmp(lv_label_get_text(object), text)) return false;
+    lv_label_set_text(object, text);
+    return true;
 }
 
 static void refresh(lv_timer_t *timer)
@@ -614,17 +653,28 @@ static void refresh(lv_timer_t *timer)
     int current = atomic_load(&state);
     if (current == IDLE && atomic_load(&online)) current = CONNECTED;
     if ((current == CONNECTED || current == SAVE_FAILED) && !atomic_load(&online) && !atomic_load(&occupied)) current = IDLE;
-    lv_label_set_text(status, messages[current]);
+    bool layout_changed = network_label_text(status, messages[current]);
     bool busy = atomic_load(&occupied);
     if (busy) { lv_obj_add_state(scan_button, LV_STATE_DISABLED); lv_obj_add_state(manual_button, LV_STATE_DISABLED); }
     else { lv_obj_remove_state(scan_button, LV_STATE_DISABLED); lv_obj_remove_state(manual_button, LV_STATE_DISABLED); }
     network_row_t copy[AP_LIMIT + SAVED_LIMIT] = {0};
-    if (xSemaphoreTake(snapshot_lock, 0) != pdTRUE) return;
-    if (!atomic_load(&online)) lv_label_set_text(current_network, "当前连接：未连接");
+    if (xSemaphoreTake(snapshot_lock, 0) != pdTRUE) {
+        if (layout_changed) layout_network_page();
+        return;
+    }
+    char connection_text[112];
+    if (!atomic_load(&online)) snprintf(connection_text, sizeof(connection_text), "当前连接：未连接");
     else if (connected_generation != atomic_load(&link_generation))
-        lv_label_set_text(current_network, "当前连接：正在读取网络名称...");
-    else lv_label_set_text_fmt(current_network, "当前连接：%s", connected_ssid);
-    if (displayed_revision == revision) { xSemaphoreGive(snapshot_lock); return; }
+        snprintf(connection_text, sizeof(connection_text), "当前连接：正在读取网络名称...");
+    else snprintf(connection_text, sizeof(connection_text), "当前连接：%s", connected_ssid);
+    /* Release the snapshot lock before layout or text/font measurement. */
+    if (displayed_revision == revision) {
+        xSemaphoreGive(snapshot_lock);
+        layout_changed |= network_label_text(current_network, connection_text);
+        if (layout_changed) layout_network_page();
+        clear_private(connection_text, sizeof(connection_text));
+        return;
+    }
     unsigned count = network_count;
     for (unsigned i = 0; i < network_count; ++i) {
         memcpy(copy[i].ssid, networks[i].ssid, 32);
@@ -647,18 +697,26 @@ static void refresh(lv_timer_t *timer)
     displayed_count = count;
     displayed_revision = revision;
     xSemaphoreGive(snapshot_lock);
+    layout_changed |= network_label_text(current_network, connection_text);
+    clear_private(connection_text, sizeof(connection_text));
+    if (layout_changed) layout_network_page();
     lv_obj_clean(list);
-    if (!count) label(list, "未找到可见网络，可以重新扫描或手动输入");
+    if (!count) {
+        lv_obj_t *empty = label(list, "未找到可见网络，可以重新扫描或手动输入");
+        lv_obj_set_width(empty, LV_PCT(100));
+        lv_label_set_long_mode(empty, LV_LABEL_LONG_WRAP);
+    }
     for (unsigned i = 0; i < count; ++i) {
         lv_obj_t *row = button(list, "", 520, choose);
         lv_obj_set_style_pad_all(row, 12, 0);
-        lv_obj_set_height(row, 100);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x1C3554), 0);
+        lv_obj_set_height(row, ui_font->line_height*2 + 32);
+        lv_obj_set_style_bg_color(row, qh_color(QH_SURFACE), 0);
         lv_obj_remove_event_cb(row, choose);
         lv_obj_add_event_cb(row, choose, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
         lv_obj_t *name = label(row, copy[i].ssid);
         lv_obj_set_width(name, 350);
-        lv_label_set_long_mode(name, LV_LABEL_LONG_CLIP);
+        lv_obj_set_height(name, ui_font->line_height);
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
         lv_obj_align(name, LV_ALIGN_TOP_LEFT, 0, 0);
         char details[80];
         snprintf(details, sizeof(details), "%s / %s", copy[i].saved ? "已保存" : copy[i].open ? "开放" : "加密",
@@ -687,6 +745,7 @@ void wifi_settings_set_font(const lv_font_t *font)
     if (screen) {
         if (!editor) update_labels(screen);
         displayed_revision = UINT_MAX;
+        layout_network_page();
     }
 }
 
@@ -697,42 +756,40 @@ void wifi_settings_show(lv_obj_t *parent, const lv_font_t *font)
     if (!commands || !snapshot_lock) return;
     if (!screen) {
         screen = lv_obj_create(NULL);
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0x10233F), 0);
+        lv_obj_set_style_bg_color(screen, qh_color(QH_BG), 0);
         lv_obj_set_scrollable(screen, false);
-        lv_obj_t *caption = label(screen, "Wi-Fi 设置");
-        lv_obj_align(caption, LV_ALIGN_TOP_RIGHT, -24, 32);
-        lv_obj_t *back_button = button(screen, "返回设置", 160, back);
-        lv_obj_align(back_button, LV_ALIGN_TOP_LEFT, 28, 18);
+        qh_screen(screen);
+        lv_obj_t *caption=qh_header(screen,"Wi-Fi",ui_font,back,true);
         scan_button = button(screen, "重新扫描", 170, scan);
         lv_obj_align(scan_button, LV_ALIGN_TOP_LEFT, 28, 100);
         manual_button = button(screen, "手动连接", 170, manual);
         lv_obj_align(manual_button, LV_ALIGN_TOP_RIGHT, -28, 100);
         status = label(screen, "正在准备...");
         lv_obj_set_width(status, UI_CONTENT_WIDTH);
+        lv_obj_set_height(status, LV_SIZE_CONTENT);
         lv_label_set_long_mode(status, LV_LABEL_LONG_WRAP);
-        lv_obj_align(status, LV_ALIGN_TOP_LEFT, UI_MARGIN, 218);
         current_network = label(screen, "当前连接：正在读取网络名称...");
         lv_obj_set_width(current_network, UI_CONTENT_WIDTH);
-        lv_label_set_long_mode(current_network, LV_LABEL_LONG_CLIP);
-        lv_obj_set_style_text_color(current_network, lv_color_hex(0x9FD3FF), 0);
-        lv_obj_align(current_network, LV_ALIGN_TOP_LEFT, UI_MARGIN, 172);
+        lv_obj_set_height(current_network, LV_SIZE_CONTENT);
+        lv_label_set_long_mode(current_network, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_color(current_network, qh_color(QH_MUTED), 0);
         list = lv_obj_create(screen);
-        lv_obj_set_size(list, UI_CONTENT_WIDTH, 628);
+        lv_obj_set_size(list, UI_CONTENT_WIDTH, 1);
         lv_obj_set_style_pad_all(list, 12, 0);
-        lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 304);
-        lv_obj_set_style_bg_color(list, lv_color_hex(0x10233F), 0);
+        lv_obj_set_style_bg_color(list, qh_color(QH_BG), 0);
         lv_obj_set_style_border_width(list, 0, 0);
         lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
         lv_obj_set_scroll_dir(list, LV_DIR_VER);
         lv_obj_set_style_pad_row(list, 10, 0);
-        caption = label(screen, "2.4GHz网络；最多记住8个，点击已保存网络直接连接");
-        lv_obj_set_width(caption, UI_CONTENT_WIDTH);
-        lv_label_set_long_mode(caption, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(caption, LV_ALIGN_BOTTOM_MID, 0, -22);
+        footer = label(screen, "2.4GHz · 最多保存8个网络");
+        lv_obj_set_width(footer, UI_CONTENT_WIDTH);
+        lv_label_set_long_mode(footer, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(footer, LV_TEXT_ALIGN_CENTER, 0);
+        layout_network_page();
         displayed_revision = UINT_MAX;
         lv_timer_create(refresh, 250, NULL);
     }
-    lv_screen_load(screen);
+    qh_screen_load(screen, false);
     scan(NULL);
 }
